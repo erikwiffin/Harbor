@@ -1,41 +1,53 @@
 # Web Agent API
 
-**A specification for bringing AI capabilities to the web platform.**
+**A specification for bringing AI capabilities to the web platform — with the user, not a vendor, in control.**
 
 ---
 
-## The Problem
+## The Problem (May 2026)
 
-Today, if a website wants to offer AI features, it has three bad options:
+AI is everywhere in the browser now. The list of "AI browsers" that shipped between October 2025 and February 2026 — ChatGPT Atlas, Comet, Dia, Copilot Mode in Edge, Gemini in Chrome — keeps growing. And yet, if you're a website that wants to offer AI features, you still have the same three bad options you had in 2024.
 
 ### Option 1: Ask Users for API Keys
 ```
 "Please enter your OpenAI API key to use this feature"
 ```
-- Terrible user experience
-- Users don't know what keys to trust websites with
-- Keys can be leaked or stolen
-- No way to revoke access per-site
+- Terrible user experience.
+- Users don't know what keys to trust websites with.
+- Keys can be leaked or stolen.
+- No way to revoke access per-site.
 
 ### Option 2: Build Your Own AI Backend
 ```
 Website → Their Server → AI Provider → Back to User
 ```
-- Expensive infrastructure to maintain
-- All user data flows through the website's servers
-- Website becomes responsible for data custody
-- Users have no control over which AI is used
+- Expensive infrastructure to maintain.
+- All user data flows through the website's servers.
+- Website becomes responsible for data custody.
+- Users have no control over which AI is used.
 
 ### Option 3: Embedded Third-Party AI
 ```
 Website embeds a chat widget from an AI company
 ```
-- User data goes to yet another company
-- No integration with user's existing AI preferences
-- Fragmented experience across websites
-- No way to use local/private models
+- User data goes to yet another company.
+- No integration with user's existing AI preferences.
+- Fragmented experience across websites.
+- No way to use local/private models.
 
-**All three options share a fundamental problem:** the user loses control over their AI experience and their data.
+### Option 4: "Just use the user's AI browser"
+```
+"Tell your users to install Atlas / Comet / Dia / Edge / Chrome (with Gemini)"
+```
+- Users have to switch browsers to use your AI feature.
+- The AI vendor is fixed — your users can't bring their own model.
+- The agent free-roams the DOM, exposing your page (and the user's other tabs) to a documented prompt-injection surface ([Comet → 1Password](https://labs.zenity.io/p/perplexedbrowser-how-attackers-can-weaponize-comet-to-takeover-your-1password-vault), [Atlas omnibox injection](https://blog.trailofbits.com/2026/02/20/using-threat-modeling-and-prompt-injection-to-audit-comet/)).
+- You don't get to integrate your own tools (WebMCP partially helps, but only on browsers that implement it).
+- Your code path doesn't work in Firefox.
+
+**All four options share a fundamental problem:** either the user loses control over their AI, or the developer does.
+
+The W3C [WebMCP](https://webmachinelearning.github.io/webmcp/) draft (April 2026) and Chrome's [Prompt API](https://developer.chrome.com/docs/ai/built-in-apis) (stable in Chrome 138 extensions, origin trial for web) each solve a slice. WebMCP gives pages a standard way to declare tools an agent can call. The Prompt API gives pages on-device Gemini Nano. Neither defines the consumer side: how an arbitrary website asks for an AI capability, with what permission model, against what user-chosen model, on what browser. **That's what this specification proposes.**
 
 ---
 

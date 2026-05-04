@@ -58,6 +58,8 @@ cd tests/e2e && npm run test:browser:keep-open
 - `demo/` - Demo pages for testing
 - `tests/e2e/` - End-to-end browser tests (Harbor's own)
 - `spec/testing/` - Test harness for **third-party** apps: run `scripts/generate-test-harness.mjs <target-dir>` to give them mocks + Playwright E2E
+- `whitepaper/` - GitHub Pages site (static HTML, no Jekyll). `index.html`, `landscape.html`, `spec.html`, `build.html` + `styles.css`. See `whitepaper/README.md` for structure and `whitepaper/DESIGN_NOTES.md` for design rationale.
+- `docs/POSITIONING.md` - **Source of truth** for how Harbor describes itself externally. Read it before writing decks, blog posts, or website copy. If you change framing on the site, change it here first so the website, the spec, the README, and any decks stay in sync.
 
 ## Common Pitfalls
 

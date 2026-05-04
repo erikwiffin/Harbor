@@ -1,13 +1,13 @@
 # Harbor
 
-**Browser infrastructure for AI-powered web applications.**
+**AI as a browser capability.** A working sketch of what user-controlled AI on the open web could look like.
 
-> **Note**: Harbor + Web Agents is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation—not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
+> **Note:** Harbor + Web Agents is an invitation to explore what user-controlled AI on the web could look like. This is meant to start a conversation — not announce a product. Nothing here is a commitment that these ideas will appear in Firefox or any Mozilla product. But if we're going to shape how AI works on the web, it helps to have something concrete to talk about.
 
-This repository contains two browser extensions that work together:
+This repository contains two browser extensions plus a small native bridge that, together, implement the **[Web Agent API](spec/)** specification:
 
-- **Harbor** — Infrastructure extension that provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, and manages the native bridge
-- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai` and `window.agent` to web pages (requires Harbor for LLM/MCP infrastructure)
+- **Harbor** — Infrastructure extension that provides LLM connections (Ollama, OpenAI, Anthropic), hosts MCP servers, and manages the native bridge.
+- **Web Agents API** — Implements the **[Web Agent API](spec/)** specification, exposing `window.ai`, `window.agent`, and `navigator.modelContext` (W3C [WebMCP](https://webmachinelearning.github.io/webmcp/)) to web pages. Requires Harbor for LLM/MCP infrastructure.
 
 ---
 
@@ -23,25 +23,26 @@ This repository contains two browser extensions that work together:
 
 ## Why This Exists
 
-**The problem:** Every website that wants AI features needs to either:
-1. Ask users for API keys (bad UX, privacy concerns)
-2. Pay for and manage their own AI infrastructure (expensive, data custody issues)
-3. Use cloud services that see all user data (privacy nightmare)
+**The problem (May 2026 edition):** AI is everywhere in the browser, and somehow you have less choice than a year ago.
 
-**The vision:** What if the browser could provide AI capabilities directly to web pages — like it provides `fetch()` for network access or `localStorage` for persistence?
+- **Vendor agent browsers** (ChatGPT Atlas, Comet, Gemini in Chrome, Copilot Mode in Edge, Dia) ask you to pick a side. Each replaces your browser with their agent and routes your context to one company.
+- **Sidebar AI assistants** (Brave Leo, Mozilla's AI Window) let you bring your own model, but only to chat with yourself. Websites can't program against them.
+- **Standards** like W3C [WebMCP](https://webmachinelearning.github.io/webmcp/) (April 2026) and Chrome's [Prompt API](https://developer.chrome.com/docs/ai/built-in-apis) solve slices — page-side tools, one on-device model — but neither answers the central question: *how does an arbitrary website call the user's chosen AI, with the user's chosen tools, on whatever browser the user happens to be on?*
 
-With the Web Agent API:
-- **Users** control their own AI (run local models, choose providers, manage permissions)
-- **Websites** get AI capabilities without managing infrastructure or handling sensitive data
-- **Privacy** is preserved because data can stay local
+**The vision:** treat AI like `fetch()`. The browser holds your model connections, your credentials, and your tools. Websites declare what they need through standard APIs (`window.ai`, `window.agent`, `navigator.modelContext`). Permissions are per-origin and revocable. The agent doesn't free-roam the DOM — websites delegate via a scoped API, which keeps the prompt-injection surface manageable.
 
 ```javascript
-// Any website can use AI — no API keys, no backend needed
+// Any website can use AI — no API keys, no backend, no vendor lock-in
 const session = await window.ai.createTextSession();
 const response = await session.prompt("Summarize this page");
 ```
 
-→ **[Read the full explainer: Why Web Agents?](spec/README.md)**
+With the Web Agent API:
+- **Users** control their own AI — run local models, choose providers, manage permissions per-origin.
+- **Websites** get AI capabilities without managing infrastructure, holding credentials, or picking a vendor.
+- **Privacy** is preserved because the data path is the user's choice (local models never leave the machine).
+
+→ **[Read the full explainer](spec/README.md)** · **[The 2026 landscape and where Harbor fits](docs/POSITIONING.md)** · **[Public site (`whitepaper/`)](whitepaper/README.md)**
 
 ---
 
