@@ -1,7 +1,0 @@
-# GitHub Pages configuration
-title: Your AI
-description: a proposal for AI that's on your side
-theme: jekyll-theme-minimal
-
-markdown: kramdown
-highlighter: rouge

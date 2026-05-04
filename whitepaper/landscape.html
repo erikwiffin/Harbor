@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The 2026 landscape — Harbor</title>
+<meta name="description" content="A long-form essay on where AI in the browser ended up by 2026 — and what that closes off." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>
+  (function () {
+    var saved = localStorage.getItem('harbor-theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+  })();
+</script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Harbor
+      <span class="brand-meta">draft · 2026</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html#proposal">Proposal</a>
+      <a href="spec.html">Spec</a>
+      <a href="build.html">Build</a>
+      <a href="landscape.html" aria-current="page">Landscape</a>
+      <a class="gh" href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub ↗</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light / dark">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="icon-sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap longform">
+  <article class="article prose">
+    <p class="eyebrow">essay · landscape</p>
+    <h1>The 2026 landscape, in four shapes.</h1>
+    <p class="deck">
+      "AI in the browser" was an idea in 2024. By 2026 it's a category — and it has
+      consolidated in a way the open web hasn't seen in a long time. Here's where
+      everyone landed, and what it closes off.
+    </p>
+    <div class="meta">
+      <span>Raffi Krikorian</span>
+      <span>May 2026</span>
+      <span>~12 min read</span>
+    </div>
+
+    <h2 id="vendor-browsers">1. Vendor agent browsers</h2>
+    <p>
+      The first shape is the vertically-integrated agent browser. OpenAI's Atlas,
+      Perplexity's Comet, Google's Gemini-in-Chrome. Each one is a fork of Chromium
+      (or, in Google's case, Chromium itself) wrapped around a single vendor's model
+      and a single vendor's agent. The agent reads your screen, moves your cursor,
+      types in your fields. It is the platform.
+    </p>
+    <p>
+      The pitch is real: a competent agent that drives the browser is genuinely useful.
+      Booking, research, comparison shopping. The trade is also real: you take the
+      whole stack, or you take none of it. Your model is theirs. Your context is
+      theirs. Your cross-site memory is stitched on their servers.
+    </p>
+    <blockquote>
+      A vendor agent browser is not a browser with AI in it. It is an AI with a
+      browser around it.
+    </blockquote>
+    <p>
+      The DOM-driving approach also has a security shape we should name: the agent
+      sees everything every page renders, including content placed there by other
+      origins, including content placed there to manipulate the agent. Prompt
+      injection isn't an edge case in this design — it's the architecture.
+    </p>
+
+    <h2 id="sidebars">2. Sidebar AI assistants</h2>
+    <p>
+      The calmer cousin: Brave Leo, Firefox's AI Window, the side-panel offerings in
+      Edge and Arc. These add an AI surface <em>next to</em> the page rather than
+      <em>over</em> it. They can summarize, answer, occasionally search.
+    </p>
+    <p>
+      They have a real virtue: the user knows where the AI starts and the page ends.
+      They have a real limit: they can't do much. They can read the page, but acting
+      on the page means going back to a DOM agent — and most of them don't.
+    </p>
+    <p>
+      The model is still the vendor's. The context still mostly leaves your machine.
+      Sidebars are politer than agent browsers, but the trust model is the same.
+    </p>
+
+    <h2 id="prompt-api">3. Prompt API + WebMCP, alone</h2>
+    <p>
+      The standards-track answer is two complementary drafts. Chrome's Prompt API
+      gives the page a <code>window.ai</code>-shaped object backed by a browser-bundled
+      model. W3C's WebMCP draft lets the page declare tools an agent can call:
+      <code>navigator.modelContext.registerTool</code>.
+    </p>
+    <p>
+      Each is good. Each is partial.
+    </p>
+    <ul>
+      <li>The Prompt API gives the page a model, but only the browser's model — Gemini Nano in practice — and only Chrome ships it.</li>
+      <li>WebMCP gives the page a vocabulary for verbs, but no agent to use them and no model to back the agent.</li>
+    </ul>
+    <p>
+      They need a seam. Something that lets a page say <em>"run an agent against
+      these tools, with the user's model"</em> without the page picking the model or
+      holding the keys. That seam is the missing piece.
+    </p>
+
+    <h2 id="harbor">4. The fourth shape</h2>
+    <p>
+      The fourth shape is the one we're proposing. The browser as the broker. The
+      page asks; the browser decides. The user picks the model — local, hosted,
+      self-run — and the browser routes <code>window.ai</code> to it. The page
+      declares its tools, or the user attaches their own MCP servers, and the
+      browser brokers what each agent run is allowed to see and do.
+    </p>
+    <p>
+      Crucially, none of this requires a new browser. It's an extension today. It's
+      a proposed addition to the Prompt API and WebMCP work for tomorrow.
+      <a class="link" href="index.html#proposal">The proposal page has the short version.</a>
+    </p>
+
+    <hr/>
+
+    <h2 id="why">Why the architecture matters more than the demo</h2>
+    <p>
+      It is tempting to compare these four shapes by what their demos look like.
+      The demos converge: an agent does a task, on a page, in a browser. They look
+      the same in a tweet.
+    </p>
+    <p>
+      The architectures don't converge. They diverge on every question that
+      matters once you're not the demo: whose model decides what gets done; whose
+      machine the context lives on; whose servers see your reading; what the
+      revoke button looks like; what happens when the model is wrong.
+    </p>
+    <p>
+      The web answered these questions, once, for cookies and cameras and
+      payments. The browser sat in the middle. The user could see what was
+      happening. There was a button to say no.
+    </p>
+    <p>
+      The argument of this proposal is that the same architecture answers the same
+      questions for AI. Not because the browser is special — because the browser
+      is the only place those questions have ever been answered well.
+    </p>
+
+    <hr/>
+
+    <p style="color: var(--ink-mute); font-family: var(--font-mono); font-size: var(--t-small);">
+      Continue: <a class="link" href="spec.html">read the Web Agent API spec →</a><br/>
+      Or jump to: <a class="link" href="index.html#differentiation">the comparison table →</a>
+    </p>
+  </article>
+
+  <aside class="toc" aria-label="Table of contents">
+    <p class="toc-label">Contents</p>
+    <ol>
+      <li><a href="#vendor-browsers">Vendor agent browsers</a></li>
+      <li><a href="#sidebars">Sidebar AI assistants</a></li>
+      <li><a href="#prompt-api">Prompt API + WebMCP</a></li>
+      <li><a href="#harbor">The fourth shape</a></li>
+      <li><a href="#why">Why architecture &gt; demo</a></li>
+    </ol>
+  </aside>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <div>
+        <a class="brand" href="index.html" style="font-size: 1.2rem;">
+          <span class="brand-mark" aria-hidden="true"></span>
+          Harbor
+        </a>
+        <p style="margin-top: 14px; color: var(--ink-mute); font-size: var(--t-small); max-width: 38ch;">
+          A sketch by people inside Mozilla. Not a Mozilla product.
+        </p>
+      </div>
+      <div>
+        <h5>Read</h5>
+        <ul>
+          <li><a href="spec.html">Web Agent API spec</a></li>
+          <li><a href="landscape.html">2026 landscape</a></li>
+          <li><a href="build.html">Build with it</a></li>
+          <li><a href="index.html#proposal">The proposal</a></li>
+          <li><a href="whitepaper.pdf">Whitepaper (PDF)</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Project</h5>
+        <ul>
+          <li><a href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub repo ↗</a></li>
+          <li><a href="https://github.com/r/harbor/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog ↗</a></li>
+          <li><a href="https://github.com/r/harbor/issues" target="_blank" rel="noopener">Issues ↗</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Contact</h5>
+        <ul>
+          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
+          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 · Harbor draft proposal</span>
+      <span>v0.3 · last updated may 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var html = document.documentElement;
+    html.classList.toggle('dark');
+    localStorage.setItem('harbor-theme', html.classList.contains('dark') ? 'dark' : 'light');
+  });
+  (function () {
+    var headings = Array.from(document.querySelectorAll('.article h2[id]'));
+    var items    = Array.from(document.querySelectorAll('.toc li'));
+    var links    = Array.from(document.querySelectorAll('.toc a'));
+    function onScroll() {
+      var y = window.scrollY + 140;
+      var idx = 0;
+      for (var i = 0; i < headings.length; i++) {
+        if (headings[i].offsetTop <= y) idx = i;
+      }
+      items.forEach(function (li, i) { li.classList.toggle('active', i === idx); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+</script>
+
+</body>
+</html>

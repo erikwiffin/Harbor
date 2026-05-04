@@ -5,6 +5,25 @@ All notable changes to Harbor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Public site redesign** — implemented the design produced in Claude Design. The site is now hand-written static HTML (`whitepaper/index.html`, `whitepaper/landscape.html`, `whitepaper/spec.html`, `whitepaper/build.html`, `whitepaper/styles.css`) with a Fraunces / Instrument Serif + Inter + JetBrains Mono type system, a single rust-clay accent, and a compare-and-contrast comparison table that re-stacks into cards on phones.
+- **Internal positioning doc** at `docs/POSITIONING.md` captures the May 2026 landscape, the differentiation table, talking points by audience, and a source list. Source of truth for messaging.
+- **Design paper trail** preserved in `whitepaper/DESIGN_NOTES.md`, `whitepaper/CLAUDE_DESIGN_PROMPT.md`, and `whitepaper/design-bundle/`.
+- **`whitepaper/README.md`** documents the new site structure.
+
+### Changed
+
+- `README.md` — "Why This Exists" rewritten to reference the May 2026 landscape (Atlas, Comet, Gemini in Chrome, Brave Leo, Firefox AI Window, WebMCP, Chrome Prompt API) and to clarify Harbor's lane.
+- `spec/README.md` — "The Problem" extended with a fourth bad option ("just use the user's AI browser") and a paragraph framing the gap left by WebMCP and the Chrome Prompt API.
+- `AGENTS.md` — `whitepaper/` description updated to reflect the static-HTML structure and `docs/POSITIONING.md` flagged as the messaging source-of-truth.
+
+### Removed
+
+- The old Jekyll scaffolding under `whitepaper/` (`_config.yml`, `_layouts/`, `Gemfile`, `index.md`, `landscape.md`) — replaced by static HTML. `.nojekyll` added so GitHub Pages serves the files as authored.
+
 ## [0.1.0] - 2026-02-04
 
 ### Added

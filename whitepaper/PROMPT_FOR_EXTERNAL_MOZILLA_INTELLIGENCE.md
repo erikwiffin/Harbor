@@ -1,5 +1,7 @@
 # Prompt: Rewrite Mozilla Intelligence for External Audience
 
+> **Historical artifact (predates May 2026).** This was an earlier prompt for converting an internal Mozilla document into public-site copy. It references `whitepaper/index.md`, which **no longer exists** — the site was redesigned in May 2026 into hand-written static HTML (`whitepaper/index.html` and friends). The current public-site source is in `whitepaper/`; the canonical messaging source-of-truth is `docs/POSITIONING.md`. Keep this prompt as a paper trail; don't follow it as current guidance.
+
 **Use this prompt with Claude.** Paste the prompt below, then paste the full "DRAFT: Mozilla Intelligence" document (Executive Summary through Error Handling). Ask Claude to produce a new document suitable for the same audience as the Harbor GitHub Pages site.
 
 ---

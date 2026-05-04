@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Web Agent API spec — Harbor</title>
+<meta name="description" content="The Web Agent API: a draft browser-mediated contract for letting websites use the user's chosen AI, with the user's chosen tools, scoped per origin." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>
+  (function () {
+    var saved = localStorage.getItem('harbor-theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+  })();
+</script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Harbor
+      <span class="brand-meta">draft · 2026</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html#proposal">Proposal</a>
+      <a href="spec.html" aria-current="page">Spec</a>
+      <a href="build.html">Build</a>
+      <a href="landscape.html">Landscape</a>
+      <a class="gh" href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub ↗</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light / dark">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="icon-sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap longform">
+  <article class="article prose">
+    <p class="eyebrow">spec · v1.4 · draft</p>
+    <h1>Web Agent API.</h1>
+    <p class="deck">
+      A small surface for browsers to broker AI capabilities to web pages —
+      <code>window.ai</code> for text generation, <code>window.agent</code> for tool use,
+      <code>navigator.modelContext</code> (W3C&nbsp;WebMCP) for page-declared tools.
+      Compatible with the Chrome Prompt API. Designed to be implementable natively.
+    </p>
+    <div class="meta">
+      <span>Status · draft</span>
+      <span>Version · 1.4</span>
+      <span>Updated · May 2026</span>
+    </div>
+
+    <h2 id="goals">Goals</h2>
+    <ul>
+      <li>Give developers a stable browser API for AI without choosing the model, holding the keys, or running the inference.</li>
+      <li>Let users keep their model, credentials, and context — and decide, per origin, what each website can use.</li>
+      <li>Be compatible with Chrome's Prompt API and W3C WebMCP. Polyfillable today, native tomorrow.</li>
+      <li>Make the threat surface small by construction: pages get verbs, not the DOM.</li>
+    </ul>
+
+    <h2 id="non-goals">Non-goals</h2>
+    <ul>
+      <li>Replace cloud AI providers. The user picks the provider; the API just brokers.</li>
+      <li>Define training, fine-tuning, or evaluation. Inference only.</li>
+      <li>Specify model behaviour. Capability and quality depend on the user's configured backend.</li>
+      <li>Handle billing or quota. Cost ceilings are user-side concerns.</li>
+    </ul>
+
+    <h2 id="surface">API surface</h2>
+
+    <h3 id="window-ai"><code>window.ai</code> — text generation</h3>
+    <p>
+      A page asks the browser for a session against the user's chosen model.
+      The page never sees an API key.
+    </p>
+    <pre class="ex-code" style="white-space: pre">const session = await window.ai.createTextSession({
+  systemPrompt: "Be concise.",
+});
+
+const reply = await session.prompt("Summarize this page.");</pre>
+    <p>
+      Surface-compatible with the Chrome Prompt API
+      (<code>window.LanguageModel.create()</code>) where it exists; falls through to
+      the user's configured provider where it doesn't.
+    </p>
+
+    <h3 id="window-agent"><code>window.agent</code> — tools and autonomous runs</h3>
+    <p>
+      A page can request scopes, list available tools, call them, or run an
+      autonomous loop the user has authorised.
+    </p>
+    <pre class="ex-code" style="white-space: pre">await window.agent.requestPermissions({
+  scopes: ["model:tools", "mcp:tools.list", "mcp:tools.call"],
+  reason: "Research assistant needs search.",
+});
+
+for await (const ev of window.agent.run({
+  task: "find recent press on quantum chips",
+})) {
+  if (ev.type === "tool_call") console.log("→", ev.tool);
+  if (ev.type === "final")     console.log(ev.output);
+}</pre>
+
+    <h3 id="model-context"><code>navigator.modelContext</code> — page-declared tools (W3C WebMCP)</h3>
+    <p>
+      The page exposes its own JavaScript-backed tools. Any agent — Harbor today,
+      Chrome's Auto Browse tomorrow — can call them.
+    </p>
+    <pre class="ex-code" style="white-space: pre">navigator.modelContext.registerTool({
+  name:        "search_archive",
+  description: "Search our 20-year archive",
+  inputSchema: { type: "object", properties: { query: { type: "string" } } },
+  execute:     ({ query }) =&gt; searchArchive(query),
+});</pre>
+
+    <h2 id="permissions">Permission model</h2>
+    <p>
+      Every capability requires explicit user consent, scoped per origin and
+      revocable. Same posture as <code>geolocation</code> and the camera.
+    </p>
+    <ul>
+      <li><code>model:prompt</code> — generate text</li>
+      <li><code>model:tools</code> — let the model pick and call tools</li>
+      <li><code>mcp:tools.list</code> — list tools the user has connected</li>
+      <li><code>mcp:tools.call</code> — execute specific tools</li>
+      <li><code>browser:activeTab.read</code> — read the current page</li>
+    </ul>
+    <p>
+      Permissions are origin-scoped: <code>example.com</code>
+      granting <code>model:tools</code> does not grant it to <code>other.com</code>.
+      Tool allow-lists let the user choose <em>which</em> tools each origin can use,
+      not just whether tools are allowed at all.
+    </p>
+
+    <h2 id="threat-model">Threat model, in one paragraph</h2>
+    <p>
+      The agent reads what the page hands it through the API — not the live DOM,
+      not other origins, not stored credentials. Tools are typed and scoped.
+      Indirect prompt injection is bounded by which tools the origin holds and
+      which tool inputs reach the model. We assume the model will be fooled and
+      design the surface so the blast radius is small. <em>By design,</em> a smaller
+      surface than free-roaming DOM agents. We don't say <em>safe.</em>
+    </p>
+    <p>
+      The full threat model lives with the spec, including specific mitigations
+      against the Comet/Atlas-class attacks documented in 2025–26.
+    </p>
+
+    <hr/>
+
+    <h2 id="full-spec">Read the full spec</h2>
+    <p>
+      The complete explainer (Web&nbsp;IDL, error model, security &amp; privacy
+      analysis, open questions) lives in the repo:
+    </p>
+    <ul>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/spec/explainer.md" target="_blank" rel="noopener">Full Web Agent API explainer (GitHub) ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/spec/security-privacy.md" target="_blank" rel="noopener">Security &amp; privacy threat model ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/tree/main/spec/examples" target="_blank" rel="noopener">Working code examples ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/docs/POSITIONING.md" target="_blank" rel="noopener">Positioning &amp; differentiation (May 2026) ↗</a></li>
+    </ul>
+
+    <h2 id="license">License</h2>
+    <p>
+      Harbor is released under the
+      <a class="link" href="https://github.com/r/harbor/blob/main/LICENSE" target="_blank" rel="noopener">MIT license</a>.
+      The spec is intended to be implementable by anyone — and we'd happily move it to
+      a community group if there's appetite.
+    </p>
+
+    <hr/>
+
+    <p style="color: var(--ink-mute); font-family: var(--font-mono); font-size: var(--t-small);">
+      Disagree with the architecture? <a class="link" href="https://github.com/r/harbor/issues" target="_blank" rel="noopener">File an issue ↗</a><br/>
+      Want to build with it? <a class="link" href="build.html">Build with Harbor →</a>
+    </p>
+  </article>
+
+  <aside class="toc" aria-label="Table of contents">
+    <p class="toc-label">Contents</p>
+    <ol>
+      <li><a href="#goals">Goals</a></li>
+      <li><a href="#non-goals">Non-goals</a></li>
+      <li><a href="#surface">API surface</a></li>
+      <li><a href="#permissions">Permissions</a></li>
+      <li><a href="#threat-model">Threat model</a></li>
+      <li><a href="#full-spec">Full spec</a></li>
+      <li><a href="#license">License</a></li>
+    </ol>
+  </aside>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <div>
+        <a class="brand" href="index.html" style="font-size: 1.2rem;">
+          <span class="brand-mark" aria-hidden="true"></span>
+          Harbor
+        </a>
+        <p style="margin-top: 14px; color: var(--ink-mute); font-size: var(--t-small); max-width: 38ch;">
+          A sketch by people inside Mozilla. Not a Mozilla product.
+        </p>
+      </div>
+      <div>
+        <h5>Read</h5>
+        <ul>
+          <li><a href="spec.html">Web Agent API spec</a></li>
+          <li><a href="landscape.html">2026 landscape</a></li>
+          <li><a href="build.html">Build with it</a></li>
+          <li><a href="index.html#proposal">The proposal</a></li>
+          <li><a href="whitepaper.pdf">Whitepaper (PDF)</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Project</h5>
+        <ul>
+          <li><a href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub repo ↗</a></li>
+          <li><a href="https://github.com/r/harbor/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog ↗</a></li>
+          <li><a href="https://github.com/r/harbor/issues" target="_blank" rel="noopener">Issues ↗</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Contact</h5>
+        <ul>
+          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
+          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 · Harbor draft proposal</span>
+      <span>v0.3 · last updated may 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var html = document.documentElement;
+    html.classList.toggle('dark');
+    localStorage.setItem('harbor-theme', html.classList.contains('dark') ? 'dark' : 'light');
+  });
+  (function () {
+    var headings = Array.from(document.querySelectorAll('.article h2[id]'));
+    var items    = Array.from(document.querySelectorAll('.toc li'));
+    function onScroll() {
+      var y = window.scrollY + 140;
+      var idx = 0;
+      for (var i = 0; i < headings.length; i++) {
+        if (headings[i].offsetTop <= y) idx = i;
+      }
+      items.forEach(function (li, i) { li.classList.toggle('active', i === idx); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+</script>
+
+</body>
+</html>

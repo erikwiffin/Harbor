@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Build with Harbor</title>
+<meta name="description" content="Install Harbor in Firefox or Chrome, then build with the Web Agent API. Bring your own model and your own MCP servers." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>
+  (function () {
+    var saved = localStorage.getItem('harbor-theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+  })();
+</script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Harbor
+      <span class="brand-meta">draft · 2026</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html#proposal">Proposal</a>
+      <a href="spec.html">Spec</a>
+      <a href="build.html" aria-current="page">Build</a>
+      <a href="landscape.html">Landscape</a>
+      <a class="gh" href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub ↗</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light / dark">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="icon-sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap longform">
+  <article class="article prose">
+    <p class="eyebrow">build · quickstart</p>
+    <h1>Build with Harbor.</h1>
+    <p class="deck">
+      Install the reference extension. Bring your own model. Write three lines.
+      The whole loop — Firefox, Ollama, your code — runs in about ten minutes.
+    </p>
+    <div class="meta">
+      <span>Firefox primary</span>
+      <span>Chrome supported</span>
+      <span>Safari experimental</span>
+    </div>
+
+    <h2 id="install">1. Install Harbor</h2>
+    <p>
+      Harbor is two browser extensions and a small native bridge (Rust). Both
+      extensions need to be loaded for the Web Agent API to work end-to-end.
+    </p>
+
+    <h3>Prerequisites</h3>
+    <ul>
+      <li><strong>Node.js 18+</strong> · <a class="link" href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a></li>
+      <li><strong>Rust</strong> · <code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code></li>
+      <li><strong>Ollama</strong> · <a class="link" href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a> or <code>brew install ollama</code></li>
+      <li><strong>Firefox 109+</strong> or <strong>Chrome 120+</strong> — Firefox recommended</li>
+    </ul>
+
+    <h3>Clone and build</h3>
+    <pre class="ex-code" style="white-space: pre">git clone --recurse-submodules https://github.com/r/harbor.git
+cd harbor
+
+# Build the Harbor extension
+cd extension && npm install && npm run build && cd ..
+
+# Build the Web Agents API extension
+cd web-agents-api && npm install && npm run build && cd ..
+
+# Build and install the native bridge
+cd bridge-rs && cargo build --release && ./install.sh && cd ..</pre>
+
+    <h3>Start a model</h3>
+    <pre class="ex-code" style="white-space: pre">ollama serve &amp;
+ollama pull llama3.2</pre>
+
+    <h3>Load both extensions in Firefox</h3>
+    <ol>
+      <li>Open <code>about:debugging#/runtime/this-firefox</code></li>
+      <li>"Load Temporary Add-on…" → <code>extension/dist-firefox/manifest.json</code></li>
+      <li>"Load Temporary Add-on…" again → <code>web-agents-api/dist-firefox/manifest.json</code></li>
+      <li>Open the Harbor sidebar (<kbd>Cmd&nbsp;+&nbsp;B</kbd>). Verify <em>Bridge: Connected</em> and <em>LLM: Ollama</em>.</li>
+    </ol>
+    <p>
+      Chrome works the same way with <code>chrome://extensions</code> →
+      <em>Load unpacked</em> → the two <code>dist-chrome/</code> directories.
+      One extra step for Chrome's native messaging is documented in the repo.
+    </p>
+
+    <hr/>
+
+    <h2 id="hello">2. Hello, browser AI</h2>
+    <p>
+      The minimum viable use of the API: ask permission, prompt the model, render the answer.
+    </p>
+    <pre class="ex-code" style="white-space: pre">&lt;button id="ask"&gt;Ask AI&lt;/button&gt;
+&lt;div id="out"&gt;&lt;/div&gt;
+&lt;script&gt;
+document.getElementById("ask").onclick = async () =&gt; {
+  await window.agent.requestPermissions({
+    scopes: ["model:prompt"],
+    reason: "To answer your question",
+  });
+
+  const session = await window.ai.createTextSession();
+  const reply   = await session.prompt("What is 2 + 2?");
+  document.getElementById("out").textContent = reply;
+};
+&lt;/script&gt;</pre>
+
+    <h2 id="agent">3. Run an agent</h2>
+    <p>
+      Add tool scopes; let the user's model pick from the tools they have approved.
+    </p>
+    <pre class="ex-code" style="white-space: pre">await window.agent.requestPermissions({
+  scopes: ["model:tools", "mcp:tools.list", "mcp:tools.call"],
+  tools:  ["brave-search/search", "memory/save"],
+  reason: "Research assistant needs search.",
+});
+
+for await (const ev of window.agent.run({
+  task: "Find recent press on AI safety",
+  maxToolCalls: 10,
+})) {
+  if (ev.type === "tool_call") console.log("→", ev.tool);
+  if (ev.type === "final")     console.log(ev.output);
+}</pre>
+
+    <h2 id="page-tools">4. Expose your own tools (W3C WebMCP)</h2>
+    <p>
+      Pages can declare JavaScript-backed tools the user's agent can call. No
+      server, no auth — the function lives in the page.
+    </p>
+    <pre class="ex-code" style="white-space: pre">navigator.modelContext.registerTool({
+  name:        "search_archive",
+  description: "Search our 20-year archive",
+  inputSchema: { type: "object", properties: { query: { type: "string" } } },
+  execute:     ({ query }) =&gt; searchArchive(query),
+});</pre>
+
+    <hr/>
+
+    <h2 id="more">Going deeper</h2>
+    <p>
+      The full developer documentation lives in the repo. The starter guide is
+      designed to drop into any AI coding assistant's context (Cursor, Claude
+      Code, Copilot) so it can write Web Agent API code with you.
+    </p>
+    <ul>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/QUICKSTART.md" target="_blank" rel="noopener">Quickstart (zero → working code in 15 min) ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/docs/BUILDING_ON_WEB_AGENTS_API.md" target="_blank" rel="noopener">BUILDING_ON_WEB_AGENTS_API — drop into your AI assistant's context ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/docs/WEB_AGENTS_API.md" target="_blank" rel="noopener">Full API reference ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/docs/TESTING_YOUR_APP.md" target="_blank" rel="noopener">Testing — unit tests with mocks, E2E with Playwright ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/blob/main/mcp-servers/AUTHORING_GUIDE.md" target="_blank" rel="noopener">MCP server authoring guide (build your own tools) ↗</a></li>
+      <li><a class="link" href="https://github.com/r/harbor/tree/main/demo" target="_blank" rel="noopener">Working demos — chat, summarizer, research agent, multi-agent ↗</a></li>
+    </ul>
+
+    <h2 id="feedback">Tell us what you build</h2>
+    <p>
+      We want sites that demo the API, not the API itself. If you build something —
+      even a half-broken sketch — let us know. The architecture lives or dies on
+      the use cases that show up.
+    </p>
+    <p>
+      <a class="link" href="mailto:raffi@mozilla.org">raffi@mozilla.org</a> · <a class="link" href="https://github.com/r/harbor/discussions" target="_blank" rel="noopener">GitHub Discussions ↗</a>
+    </p>
+  </article>
+
+  <aside class="toc" aria-label="Table of contents">
+    <p class="toc-label">Contents</p>
+    <ol>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#hello">Hello, browser AI</a></li>
+      <li><a href="#agent">Run an agent</a></li>
+      <li><a href="#page-tools">Page-declared tools</a></li>
+      <li><a href="#more">Going deeper</a></li>
+      <li><a href="#feedback">Tell us</a></li>
+    </ol>
+  </aside>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <div>
+        <a class="brand" href="index.html" style="font-size: 1.2rem;">
+          <span class="brand-mark" aria-hidden="true"></span>
+          Harbor
+        </a>
+        <p style="margin-top: 14px; color: var(--ink-mute); font-size: var(--t-small); max-width: 38ch;">
+          A sketch by people inside Mozilla. Not a Mozilla product.
+        </p>
+      </div>
+      <div>
+        <h5>Read</h5>
+        <ul>
+          <li><a href="spec.html">Web Agent API spec</a></li>
+          <li><a href="landscape.html">2026 landscape</a></li>
+          <li><a href="build.html">Build with it</a></li>
+          <li><a href="index.html#proposal">The proposal</a></li>
+          <li><a href="whitepaper.pdf">Whitepaper (PDF)</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Project</h5>
+        <ul>
+          <li><a href="https://github.com/r/harbor" target="_blank" rel="noopener">GitHub repo ↗</a></li>
+          <li><a href="https://github.com/r/harbor/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog ↗</a></li>
+          <li><a href="https://github.com/r/harbor/issues" target="_blank" rel="noopener">Issues ↗</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Contact</h5>
+        <ul>
+          <li><a href="mailto:raffi@mozilla.org">raffi@mozilla.org</a></li>
+          <li><a href="mailto:raffi.krikorian@gmail.com">raffi.krikorian@gmail.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 · Harbor draft proposal</span>
+      <span>v0.3 · last updated may 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var html = document.documentElement;
+    html.classList.toggle('dark');
+    localStorage.setItem('harbor-theme', html.classList.contains('dark') ? 'dark' : 'light');
+  });
+  (function () {
+    var headings = Array.from(document.querySelectorAll('.article h2[id]'));
+    var items    = Array.from(document.querySelectorAll('.toc li'));
+    function onScroll() {
+      var y = window.scrollY + 140;
+      var idx = 0;
+      for (var i = 0; i < headings.length; i++) {
+        if (headings[i].offsetTop <= y) idx = i;
+      }
+      items.forEach(function (li, i) { li.classList.toggle('active', i === idx); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+</script>
+
+</body>
+</html>

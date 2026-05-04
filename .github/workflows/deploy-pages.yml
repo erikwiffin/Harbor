@@ -1,4 +1,9 @@
-# Deploy whitepaper and demo directories to GitHub Pages
+# Deploy whitepaper (static HTML) and demo directories to GitHub Pages
+#
+# As of May 2026, whitepaper/ is hand-written static HTML (no Jekyll). See
+# whitepaper/README.md and whitepaper/DESIGN_NOTES.md for the design rationale.
+# This workflow just stages the right files into _site/ and lets GitHub Pages
+# serve them as-is — .nojekyll is added so Pages doesn't try to re-process them.
 name: Deploy to GitHub Pages
 
 on:
@@ -12,13 +17,11 @@ on:
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -30,43 +33,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-          bundler-cache: true
-          working-directory: whitepaper
-
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
 
-      - name: Build Jekyll whitepaper
-        working-directory: whitepaper
+      - name: Stage site
         run: |
-          bundle exec jekyll build --baseurl "/Harbor"
-        env:
-          JEKYLL_ENV: production
-          PAGES_REPO_NWO: ${{ github.repository }}
-
-      - name: Prepare combined site
-        run: |
+          set -euo pipefail
           mkdir -p _site
-          # Copy whitepaper Jekyll build to root (whitepaper is the main site)
-          cp -r whitepaper/_site/* _site/
-          # Copy demo static files
-          cp -r demo _site/demo
-          # Remove unnecessary files from demo
-          rm -f _site/demo/package.json _site/demo/package-lock.json
-          rm -rf _site/demo/node_modules 2>/dev/null || true
-          # Copy build-on-API guide for published docs (invite people to build with AI tools)
-          mkdir -p _site/docs
+
+          # 1. whitepaper/ is the static-HTML site root. Copy everything except
+          #    historical/internal artifacts that don't need to be served.
+          rsync -a \
+            --exclude 'README.md' \
+            --exclude 'DESIGN_NOTES.md' \
+            --exclude 'CLAUDE_DESIGN_PROMPT.md' \
+            --exclude 'PROMPT_FOR_EXTERNAL_MOZILLA_INTELLIGENCE.md' \
+            --exclude 'design-bundle/' \
+            whitepaper/ _site/
+
+          # 2. Demo pages (live demos linked from the site).
+          rsync -a \
+            --exclude 'package.json' \
+            --exclude 'package-lock.json' \
+            --exclude 'node_modules/' \
+            demo/ _site/demo/
+
+          # 3. Selected docs published alongside the site so the in-page
+          #    "BUILDING_ON_WEB_AGENTS_API" link and the spec README work
+          #    when read off the Pages URL too.
+          mkdir -p _site/docs _site/spec
           cp docs/BUILDING_ON_WEB_AGENTS_API.md _site/docs/
-          # Copy spec README for published docs
-          mkdir -p _site/spec
           cp spec/README.md _site/spec/
-          # Add .nojekyll to prevent GitHub from processing with Jekyll again
+
+          # 4. Belt-and-braces: ensure GitHub Pages serves files exactly as
+          #    written. whitepaper/.nojekyll already covers this, but rsync's
+          #    excludes can hide dotfiles depending on glob settings, so we
+          #    re-touch it here as a guarantee.
           touch _site/.nojekyll
+
+          # Sanity output for the action log.
+          ls -la _site/
+          echo "---"
+          ls -la _site/docs/ _site/spec/ _site/demo/ | head -40
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
