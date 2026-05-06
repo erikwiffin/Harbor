@@ -157,14 +157,12 @@
       const assistantDiv = addMessage('assistant', '');
       
       try {
-        // Stream the response
-        for await (const event of session.promptStreaming(message)) {
-          if (event.type === 'token') {
-            assistantDiv.querySelector('.content').textContent += event.token;
-            chatEl.scrollTop = chatEl.scrollHeight;
-          } else if (event.type === 'error') {
-            assistantDiv.querySelector('.content').textContent = 'Error: ' + event.error.message;
-          }
+        // Stream the response — promptStreaming yields plain string chunks
+        // (Chrome Prompt API compatible). Errors throw.
+        const contentEl = assistantDiv.querySelector('.content');
+        for await (const chunk of session.promptStreaming(message)) {
+          contentEl.textContent += chunk;
+          chatEl.scrollTop = chatEl.scrollHeight;
         }
       } catch (err) {
         assistantDiv.querySelector('.content').textContent = 'Error: ' + err.message;

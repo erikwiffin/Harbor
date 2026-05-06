@@ -122,6 +122,8 @@ document.getElementById("ask").onclick = async () =&gt; {
     <h2 id="agent">3. Run an agent</h2>
     <p>
       Add tool scopes; let the user's model pick from the tools they have approved.
+      <code>agent.run</code> is gated by the <code>toolCalling</code> feature flag in the
+      Web Agents API sidebar — flip it on for development.
     </p>
     <pre class="ex-code" style="white-space: pre">await window.agent.requestPermissions({
   scopes: ["model:tools", "mcp:tools.list", "mcp:tools.call"],
@@ -133,6 +135,7 @@ for await (const ev of window.agent.run({
   task: "Find recent press on AI safety",
   maxToolCalls: 10,
 })) {
+  if (ev.type === "thinking")  console.log(ev.content);
   if (ev.type === "tool_call") console.log("→", ev.tool);
   if (ev.type === "final")     console.log(ev.output);
 }</pre>
@@ -142,11 +145,11 @@ for await (const ev of window.agent.run({
       Pages can declare JavaScript-backed tools the user's agent can call. No
       server, no auth — the function lives in the page.
     </p>
-    <pre class="ex-code" style="white-space: pre">navigator.modelContext.registerTool({
+    <pre class="ex-code" style="white-space: pre">navigator.modelContext.addTool({
   name:        "search_archive",
   description: "Search our 20-year archive",
   inputSchema: { type: "object", properties: { query: { type: "string" } } },
-  execute:     ({ query }) =&gt; searchArchive(query),
+  handler:     ({ query }) =&gt; searchArchive(query),
 });</pre>
 
     <hr/>

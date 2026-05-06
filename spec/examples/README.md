@@ -63,18 +63,18 @@ const session = await window.ai.createTextSession({
 // Non-streaming
 const response = await session.prompt('Hello');
 
-// Streaming
-for await (const event of session.promptStreaming('Hello')) {
-  if (event.type === 'token') {
-    console.log(event.token);
-  }
+// Streaming — yields plain string chunks (Chrome Prompt API compatible).
+for await (const chunk of session.promptStreaming('Hello')) {
+  process.stdout.write(chunk);
 }
 
 // Clean up
-await session.destroy();
+session.destroy();
 ```
 
 ### Run an Agent Task
+
+`agent.run()` yields **typed events**, and requires the `toolCalling` feature flag in the Web Agents API sidebar.
 
 ```javascript
 for await (const event of window.agent.run({
@@ -82,11 +82,11 @@ for await (const event of window.agent.run({
   maxToolCalls: 5
 })) {
   switch (event.type) {
-    case 'status': console.log('Status:', event.message); break;
-    case 'tool_call': console.log('Calling:', event.tool); break;
-    case 'token': process.stdout.write(event.token); break;
-    case 'final': console.log('Done:', event.output); break;
-    case 'error': console.error('Error:', event.error); break;
+    case 'thinking':    console.log('thinking:', event.content); break;
+    case 'tool_call':   console.log('calling:', event.tool, event.args); break;
+    case 'tool_result': console.log('result:', event.tool, event.result); break;
+    case 'final':       console.log('done:', event.output); break;
+    case 'error':       console.error('error:', event.error); break;
   }
 }
 ```

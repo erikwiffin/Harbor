@@ -11,6 +11,34 @@
 // Make this a module to avoid global scope conflicts
 export {};
 
+// Public API version exposed via window.agent.capabilities().apiVersion.
+// Bump on every shipped surface change so callers can negotiate.
+const API_VERSION = '1.4.0';
+
+// Debug flag — opt in via:
+//   • <meta name="web-agents-api-debug" content="1">
+//   • localStorage['web-agents-api:debug'] = '1'
+//   • window.__webAgentsApiDebug = true (before the script runs)
+// When false (default) the API stays silent in the page console.
+const DEBUG: boolean = (() => {
+  try {
+    if ((window as unknown as { __webAgentsApiDebug?: boolean }).__webAgentsApiDebug) return true;
+    if (document.querySelector('meta[name="web-agents-api-debug"][content="1"]')) return true;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('web-agents-api:debug') === '1') return true;
+  } catch {
+    // ignore (e.g. cross-origin localStorage); default to silent
+  }
+  return false;
+})();
+
+function dlog(...args: unknown[]): void {
+  if (DEBUG) console.debug('[Web Agents API]', ...args);
+}
+
+function dwarn(...args: unknown[]): void {
+  if (DEBUG) console.warn('[Web Agents API]', ...args);
+}
+
 // =============================================================================
 // Feature Flags
 // =============================================================================
@@ -89,10 +117,12 @@ type PermissionScope =
   | 'browser:tabs.create'
   | 'browser:tabs.read'
   | 'browser:navigate'
-  | 'agents:register'
-  | 'agents:invoke'
+  | 'web:fetch'
   | 'chat:open'
-  | 'web:fetch';
+  | 'agents:register'
+  | 'agents:discover'
+  | 'agents:invoke'
+  | 'agents:message';
 
 type PermissionGrant = 'granted-once' | 'granted-always' | 'denied' | 'not-granted';
 
@@ -261,27 +291,25 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (data.streamEvent) {
     const eventType = (data.streamEvent.event as { type?: string })?.type;
     const hasListener = streamListeners.has(data.streamEvent.id);
-    
-    // Log ALL events to debug ID mismatch
+
     if (!hasListener || eventType !== 'token') {
-      console.log('[Web Agents API:Injected] Stream event arrived:', {
+      dlog('stream event', {
         eventId: data.streamEvent.id,
         eventType,
         done: data.streamEvent.done,
         hasListener,
-        registeredIds: Array.from(streamListeners.keys()),
       });
     }
-    
+
     const listener = streamListeners.get(data.streamEvent.id);
     if (listener) {
       listener(data.streamEvent.event, data.streamEvent.done || false);
       if (data.streamEvent.done) {
-        console.log('[Web Agents API:Injected] Stream complete, removing listener:', data.streamEvent.id);
+        dlog('stream complete', data.streamEvent.id);
         streamListeners.delete(data.streamEvent.id);
       }
     } else {
-      console.warn('[Web Agents API:Injected] ⚠️ NO LISTENER for event ID:', data.streamEvent.id, 'registered IDs:', Array.from(streamListeners.keys()));
+      dwarn('no listener for stream event', data.streamEvent.id);
     }
   }
 });
@@ -323,20 +351,20 @@ function createStreamIterable<T extends StreamToken>(
       let error: Error | null = null;
 
       // Register stream listener before sending request
-      console.log('[Web Agents API:Injected] Registering stream listener:', id, 'for type:', type);
+      dlog('register stream listener', { id, type });
       let tokenCount = 0;
       streamListeners.set(id, (event, isDone) => {
         tokenCount++;
-        if (tokenCount <= 3 || isDone) {
-          console.log('[Web Agents API:Injected] Listener received event #' + tokenCount + ':', {
+        if (DEBUG && (tokenCount <= 3 || isDone)) {
+          dlog('stream listener event', {
             id,
+            n: tokenCount,
             eventType: (event as { type?: string }).type,
-            hasToken: !!(event as { token?: string }).token,
             isDone,
           });
         }
         if (isDone) {
-          console.log('[Web Agents API:Injected] Stream DONE, total tokens:', tokenCount);
+          dlog('stream done', { id, total: tokenCount });
           done = true;
           streamListeners.delete(id);
         }
@@ -410,27 +438,20 @@ function createTextSessionObject(sessionId: string): TextSession {
     },
 
     promptStreaming(input: string): AsyncIterable<string> {
-      console.log('[Web Agents API:Injected] promptStreaming called for session:', sessionId);
+      dlog('promptStreaming', { sessionId });
       const tokenIterable = createStreamIterable<StreamToken>('session.promptStreaming', { sessionId, input });
-      
+
       // Transform to yield just the token strings
       return {
         [Symbol.asyncIterator]() {
-          console.log('[Web Agents API:Injected] promptStreaming [Symbol.asyncIterator] called');
           const tokenIterator = tokenIterable[Symbol.asyncIterator]();
           let yieldCount = 0;
-          
+
           return {
             async next(): Promise<IteratorResult<string>> {
-              console.log('[Web Agents API:Injected] promptStreaming next() called, waiting for tokenIterator...');
               const result = await tokenIterator.next();
-              console.log('[Web Agents API:Injected] promptStreaming got result:', {
-                done: result.done,
-                valueType: result.value?.type,
-                hasToken: !!result.value?.token,
-              });
               if (result.done) {
-                console.log('[Web Agents API:Injected] promptStreaming iterator done, yielded:', yieldCount);
+                dlog('promptStreaming complete', { yielded: yieldCount });
                 return { done: true, value: undefined };
               }
               if (result.value.type === 'token' && result.value.token) {
@@ -438,7 +459,7 @@ function createTextSessionObject(sessionId: string): TextSession {
                 return { done: false, value: result.value.token };
               }
               if (result.value.type === 'done') {
-                console.log('[Web Agents API:Injected] promptStreaming received done event, yielded:', yieldCount);
+                dlog('promptStreaming done event', { yielded: yieldCount });
                 return { done: true, value: undefined };
               }
               if (result.value.type === 'error') {
@@ -1146,11 +1167,11 @@ let eventListenerSetUp = false;
  */
 function setupAgentEventListener() {
   if (eventListenerSetUp) {
-    console.log('[Web Agents API Page] Event listener already set up, skipping');
+    dlog('agent event listener already set up');
     return;
   }
   eventListenerSetUp = true;
-  console.log('[Web Agents API Page] Setting up event listener');
+  dlog('setting up agent event listener');
   
   // Listen for agent events from the content script
   window.addEventListener('message', async (event: MessageEvent) => {
@@ -1183,14 +1204,14 @@ function setupAgentEventListener() {
       // Deduplicate invocations
       const invocationId = invocation.invocationId;
       if (processedPageInvocations.has(invocationId)) {
-        console.log('[Web Agents API Page] DUPLICATE invocation, skipping:', invocationId);
+        dlog('duplicate invocation, skipping', invocationId);
         return;
       }
       processedPageInvocations.add(invocationId);
       // Clean up after 60 seconds
       setTimeout(() => processedPageInvocations.delete(invocationId), 60000);
-      
-      console.log('[Web Agents API Page] Processing invocation:', invocation.task, invocationId);
+
+      dlog('processing invocation', { task: invocation.task, invocationId });
       
       // Dispatch to invocation handlers and send response
       let result: unknown;
@@ -1252,6 +1273,80 @@ const agentApi = Object.freeze({
       return sendRequest<PermissionStatus>('agent.permissions.list');
     },
   }),
+
+  /**
+   * Synchronously describe what this page can ask Harbor to do.
+   *
+   * Returns the API version, the set of feature flags currently enabled by
+   * the user, and which sub-namespaces of `window.agent` are available as a
+   * result. This lets callers feature-detect without try/catching every API:
+   *
+   * @example
+   * const caps = window.agent.capabilities();
+   * if (caps.features.toolCalling) {
+   *   for await (const ev of window.agent.run({ task: '…' })) { … }
+   * }
+   */
+  capabilities(): {
+    apiVersion: string;
+    features: {
+      textGeneration: boolean;
+      toolCalling: boolean;
+      toolAccess: boolean;
+      browserInteraction: boolean;
+      browserControl: boolean;
+      multiAgent: boolean;
+    };
+    surfaces: {
+      ai: boolean;
+      tools: boolean;
+      run: boolean;
+      browser: { activeTab: boolean; tabs: boolean; navigate: boolean; fetch: boolean };
+      mcp: boolean;
+      chat: boolean;
+      sessions: boolean;
+      agents: boolean;
+      modelContext: boolean;
+    };
+    scopes: PermissionScope[];
+  } {
+    const f = FEATURE_FLAGS;
+    return {
+      apiVersion: API_VERSION,
+      features: {
+        textGeneration: f.textGeneration,
+        toolCalling: f.toolCalling,
+        toolAccess: f.toolAccess,
+        browserInteraction: f.browserInteraction,
+        browserControl: f.browserControl,
+        multiAgent: f.multiAgent,
+      },
+      surfaces: {
+        ai: f.textGeneration,
+        tools: f.toolAccess,
+        run: f.toolCalling,
+        browser: {
+          activeTab: f.browserInteraction,
+          tabs: f.browserControl,
+          navigate: f.browserControl,
+          fetch: f.browserControl,
+        },
+        mcp: true,
+        chat: true,
+        sessions: f.toolAccess,
+        agents: f.multiAgent,
+        modelContext: true,
+      },
+      scopes: [
+        'model:prompt', 'model:tools', 'model:list',
+        'mcp:tools.list', 'mcp:tools.call', 'mcp:servers.register',
+        'browser:activeTab.read', 'browser:activeTab.interact', 'browser:activeTab.screenshot',
+        'browser:tabs.create', 'browser:tabs.read', 'browser:navigate',
+        'web:fetch', 'chat:open',
+        'agents:register', 'agents:discover', 'agents:invoke', 'agents:message',
+      ],
+    };
+  },
 
   tools: FEATURE_FLAGS.toolAccess
     ? Object.freeze({

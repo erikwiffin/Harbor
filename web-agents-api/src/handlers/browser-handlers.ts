@@ -400,3 +400,130 @@ export async function handleBrowserReadability(ctx: RequestContext): HandlerResp
     return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Readability extraction failed');
   }
 }
+
+// =============================================================================
+// Navigate Handler (active tab)
+// =============================================================================
+
+const ALLOWED_NAV_PROTOCOLS = new Set(['http:', 'https:']);
+
+export async function handleBrowserNavigate(ctx: RequestContext): HandlerResponse {
+  if (!await hasPermission(ctx.origin, 'browser:navigate')) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission browser:navigate required');
+  }
+
+  const { url } = ctx.payload as { url?: string };
+  if (!url || typeof url !== 'string') {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'Missing url parameter');
+  }
+
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Invalid URL: ${url}`);
+  }
+
+  if (!ALLOWED_NAV_PROTOCOLS.has(target.protocol)) {
+    return errorResponse(
+      ctx.id,
+      'ERR_INVALID_REQUEST',
+      `Navigation blocked: only http(s) allowed, got ${target.protocol}`,
+    );
+  }
+
+  if (!ctx.tabId) {
+    return errorResponse(ctx.id, 'ERR_INTERNAL', 'No tab context available');
+  }
+
+  try {
+    await chrome.tabs.update(ctx.tabId, { url: target.toString() });
+    return successResponse(ctx.id, { success: true });
+  } catch (e) {
+    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Navigation failed');
+  }
+}
+
+// =============================================================================
+// Fetch Handler (CORS-bypassing fetch via the extension)
+// =============================================================================
+
+export async function handleBrowserFetch(ctx: RequestContext): HandlerResponse {
+  if (!await hasPermission(ctx.origin, 'web:fetch')) {
+    return errorResponse(ctx.id, 'ERR_PERMISSION_DENIED', 'Permission web:fetch required');
+  }
+
+  const { url, options } = ctx.payload as {
+    url?: string;
+    options?: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      redirect?: RequestRedirect;
+      credentials?: RequestCredentials;
+    };
+  };
+
+  if (!url || typeof url !== 'string') {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', 'Missing url parameter');
+  }
+
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return errorResponse(ctx.id, 'ERR_INVALID_REQUEST', `Invalid URL: ${url}`);
+  }
+
+  if (!ALLOWED_NAV_PROTOCOLS.has(target.protocol)) {
+    return errorResponse(
+      ctx.id,
+      'ERR_INVALID_REQUEST',
+      `Fetch blocked: only http(s) allowed, got ${target.protocol}`,
+    );
+  }
+
+  // Block obvious local-network exfiltration vectors. SSRF-style protection;
+  // not exhaustive (DNS rebinding etc. are out of scope here) but covers the
+  // common cases users would expect us to block.
+  const host = target.hostname.toLowerCase();
+  const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
+  const looksPrivate =
+    blockedHosts.includes(host) ||
+    host.endsWith('.local') ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  if (looksPrivate) {
+    return errorResponse(
+      ctx.id,
+      'ERR_PERMISSION_DENIED',
+      `Fetch blocked: host ${host} is on a private/local network`,
+    );
+  }
+
+  try {
+    const init: RequestInit = {
+      method: options?.method ?? 'GET',
+      headers: options?.headers,
+      body: options?.body,
+      redirect: options?.redirect ?? 'follow',
+      // Never send the extension's cookies to third parties.
+      credentials: 'omit',
+    };
+    const response = await fetch(target.toString(), init);
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => { headers[key] = value; });
+    const body = await response.text();
+    return successResponse(ctx.id, {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      body,
+      url: response.url,
+    });
+  } catch (e) {
+    return errorResponse(ctx.id, 'ERR_INTERNAL', e instanceof Error ? e.message : 'Fetch failed');
+  }
+}

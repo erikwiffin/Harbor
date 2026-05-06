@@ -1,823 +1,231 @@
 # Agentic Browser Roadmap
 
-**Status**: Design Document  
-**Author**: Raffi Krikorian  
-**Last Updated**: January 2026
+**Status**: Living design document
+**Author**: Raffi Krikorian
+**Last Updated**: May 2026
 
 ---
 
-## Table of Contents
+This document is the design conversation about what gets built **on top of** the Web Agent API: full browser agency, multi-agent systems, always-on background agents (Hermes-style), and agentic browsers. It's a roadmap, not a spec. The spec lives in [`spec/explainer.md`](../spec/explainer.md); the implementation reference is [`docs/WEB_AGENTS_API.md`](./WEB_AGENTS_API.md).
 
-1. [Introduction](#introduction)
-2. [Current State](#current-state)
-3. [Gap Analysis: Browser Agency](#gap-analysis-browser-agency)
-4. [Gap Analysis: Multi-Agent Support](#gap-analysis-multi-agent-support)
-5. [Proposed Extensions](#proposed-extensions)
-6. [Security Considerations](#security-considerations)
-7. [Implementation Phases](#implementation-phases)
+If you're trying to build something on top of Harbor today, start with [`BUILDING_ON_HARBOR.md`](./BUILDING_ON_HARBOR.md).
 
 ---
 
-## Introduction
+## Where we are (May 2026)
 
-This document analyzes what additional capabilities the Web Agent API needs to support:
+The Web Agent API ships as two browser extensions plus a Rust bridge. The page-facing surface is more capable than this document used to claim. Most of what early drafts marked "🔮 Planned" already exists — gated behind feature flags so the user can disable whole capability classes globally.
 
-1. **Full Browser Agency** — Agents that can autonomously browse, interact with pages, and accomplish tasks across the web
-2. **Multi-Agent Architectures** — Multiple specialized agents running in the browser, coordinating on complex tasks
+### What ships
 
-The Web Agent API currently provides excellent primitives for AI-enhanced web applications. This document explores what's needed for the next level: browsers that can act autonomously on behalf of users.
-
----
-
-## Current State
-
-### What We Have
-
-The Web Agent API (v1.4) provides:
-
-| Capability | API | Status |
-|------------|-----|--------|
-| LLM Access | `window.ai.createTextSession()` | ✅ Complete |
-| Multi-Provider | `ai.providers.list()`, native browser AI | ✅ Complete |
-| Tool Execution | `agent.tools.list()`, `agent.tools.call()` | ✅ Complete |
-| Autonomous Loop | `agent.run()` with tool calling | ✅ Complete |
-| Page Content | `agent.browser.activeTab.readability()` | ✅ Complete |
-| **Page Interaction** | `click()`, `fill()`, `scroll()` | ✅ **NEW** |
-| **Screenshots** | `agent.browser.activeTab.screenshot()` | ✅ **NEW** |
-| Permissions | Per-origin, capability-based | ✅ Complete |
-| Address Bar | `agent.addressBar.*` | ✅ Complete |
-| BYOC Platform | `agent.mcp.*`, `agent.chat.*` | ✅ Complete |
+| Capability | API | Permission | Feature flag | Status |
+|---|---|---|---|---|
+| Text generation | `window.ai.createTextSession()` | `model:prompt` | `textGeneration` (ON) | ✅ |
+| Multi-provider LLM | `ai.providers.list()`, `getActive()` | `model:list` | — | ✅ |
+| MCP tool listing | `agent.tools.list()` | `mcp:tools.list` | `toolAccess` (ON) | ✅ |
+| MCP tool call | `agent.tools.call({tool, args})` | `mcp:tools.call` (+ allowlist) | `toolAccess` (ON) | ✅ |
+| Page-declared tools (W3C WebMCP) | `navigator.modelContext.addTool()` | — | — | ✅ |
+| Autonomous tool-using loop | `agent.run({task})` (typed event stream) | `model:tools` | `toolCalling` (OFF) | ✅ |
+| Read active tab | `agent.browser.activeTab.readability()` | `browser:activeTab.read` | — | ✅ |
+| Same-tab interaction | `activeTab.click/fill/scroll/select/getElements` | `browser:activeTab.interact` | `browserInteraction` (OFF) | ✅ |
+| Same-tab screenshot | `activeTab.screenshot()` | `browser:activeTab.screenshot` | `browserInteraction` (OFF) | ✅ |
+| Navigate | `agent.browser.navigate(url)` | `browser:navigate` | `browserControl` (OFF) | ✅ |
+| Tab list / spawn / close | `agent.browser.tabs.{list, create, close}` | `browser:tabs.read` / `browser:tabs.create` | `browserControl` (OFF) | ✅ |
+| Spawned-tab read | `agent.browser.tab.{readability, getHtml, waitForLoad}` | `browser:tabs.create` | `browserControl` (OFF) | ✅ |
+| CORS-bypass fetch | `agent.browser.fetch(url, opts)` | `web:fetch` | `browserControl` (OFF) | ✅ |
+| Capability-bounded sessions | `agent.sessions.create({capabilities, limits})` | (per declared capabilities) | — | ✅ |
+| Site-provided MCP servers (BYOC) | `agent.mcp.{discover, register, unregister}` | `mcp:servers.register` | — | ✅ |
+| Open user's chat with config (BYOC) | `agent.chat.{canOpen, open, close}` | `chat:open` | — | ✅ |
+| Multi-agent registration | `agent.agents.{register, discover, list, getInfo, unregister}` | `agents:register` / `agents:discover` | `multiAgent` (OFF) | ✅ |
+| Multi-agent invocation + messaging | `agent.agents.{invoke, send, onMessage, onInvoke}` | `agents:invoke` / `agents:message` | `multiAgent` (OFF) | ✅ |
+| Multi-agent events | `agent.agents.{subscribe, unsubscribe, broadcast}` | `agents:message` | `multiAgent` (OFF) | ✅ |
+| Multi-agent orchestration | `agent.agents.orchestrate.{pipeline, parallel, route}` | `agents:invoke` | `multiAgent` (OFF) | ✅ |
 
 ### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         WEB PAGE                                 │
-│  window.ai (LLM)              window.agent (tools, browser)     │
-└─────────────────────────────────┬───────────────────────────────┘
-                                  │
-┌─────────────────────────────────▼───────────────────────────────┐
-│                    BROWSER EXTENSION                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │ Permissions │  │ Orchestrator│  │ MCP Host (WASM/JS/native)│  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────┬───────────────────────────────┘
-                                  │
-┌─────────────────────────────────▼───────────────────────────────┐
-│                    NATIVE BRIDGE (Rust)                          │
-│  LLM Providers (Ollama, OpenAI, Anthropic, etc.)                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Remaining Gaps
-
-With same-tab page interaction now implemented, the remaining gaps are:
-
-1. **Cross-Tab Control** — Agents cannot create/control other tabs (by design - see Security Model)
-2. **Navigation** — No programmatic `navigate()` to other URLs
-3. **Multi-Agent Coordination** — No discovery or communication between agents
-4. **Web Fetch** — `web:fetch` permission reserved but not implemented
-
----
-
-## Gap Analysis: Browser Agency
-
-For "Operator/Computer Use" style automation, agents need to control the browser.
-
-### 1. Page Interaction APIs (Critical)
-
-**Missing:** Ability to interact with page elements.
-
-```typescript
-// Proposed API
-interface ActiveTabInteraction {
-  // Query elements
-  querySelector(selector: string): Promise<ElementInfo | null>;
-  querySelectorAll(selector: string): Promise<ElementInfo[]>;
-  
-  // Interactions
-  click(selector: string, options?: ClickOptions): Promise<void>;
-  fill(selector: string, value: string): Promise<void>;
-  select(selector: string, value: string): Promise<void>;
-  check(selector: string, checked?: boolean): Promise<void>;
-  
-  // Scrolling
-  scroll(options: ScrollOptions): Promise<void>;
-  scrollIntoView(selector: string): Promise<void>;
-  
-  // Waiting
-  waitForSelector(selector: string, options?: WaitOptions): Promise<ElementInfo>;
-  waitForNavigation(options?: WaitOptions): Promise<void>;
-  
-  // Visual
-  screenshot(options?: ScreenshotOptions): Promise<string>;  // base64
-  boundingBox(selector: string): Promise<BoundingBox | null>;
-}
-
-interface ElementInfo {
-  tagName: string;
-  id?: string;
-  className?: string;
-  textContent?: string;
-  attributes: Record<string, string>;
-  isVisible: boolean;
-  isEnabled: boolean;
-  boundingBox?: BoundingBox;
-}
-
-interface ClickOptions {
-  button?: 'left' | 'right' | 'middle';
-  clickCount?: number;
-  delay?: number;
-}
-
-interface ScreenshotOptions {
-  fullPage?: boolean;
-  selector?: string;  // Capture specific element
-  format?: 'png' | 'jpeg';
-  quality?: number;
-}
-```
-
-**Permission Scope:** `browser:activeTab.interact`
-
-**Risk Level:** High — enables automation of any visible page.
-
-### 2. Navigation APIs (Critical)
-
-**Missing:** Programmatic navigation and tab management.
-
-```typescript
-// Proposed API
-interface BrowserNavigation {
-  // Current tab
-  navigate(url: string): Promise<void>;
-  goBack(): Promise<void>;
-  goForward(): Promise<void>;
-  reload(): Promise<void>;
-  
-  // Tab management
-  tabs: {
-    create(options?: TabCreateOptions): Promise<TabInfo>;
-    list(options?: TabQueryOptions): Promise<TabInfo[]>;
-    get(tabId: number): Promise<TabInfo>;
-    update(tabId: number, options: TabUpdateOptions): Promise<TabInfo>;
-    close(tabId: number): Promise<void>;
-    activate(tabId: number): Promise<void>;
-  };
-  
-  // Window management (optional)
-  windows?: {
-    create(options?: WindowCreateOptions): Promise<WindowInfo>;
-    list(): Promise<WindowInfo[]>;
-    close(windowId: number): Promise<void>;
-  };
-}
-
-interface TabInfo {
-  id: number;
-  url: string;
-  title: string;
-  active: boolean;
-  windowId: number;
-  status: 'loading' | 'complete';
-}
-
-interface TabCreateOptions {
-  url?: string;
-  active?: boolean;
-  index?: number;
-}
-```
-
-**Permission Scopes:**
-- `browser:navigate` — Navigate current tab
-- `browser:tabs.read` — List and query tabs
-- `browser:tabs.manage` — Create, close, activate tabs
-
-### 3. Web Fetch (High Priority)
-
-**Status:** Reserved in v1, not implemented.
-
-```typescript
-// Proposed API
-interface WebFetch {
-  fetch(url: string, options?: FetchOptions): Promise<Response>;
-}
-
-interface FetchOptions extends RequestInit {
-  // Additional options for proxied fetch
-  followRedirects?: boolean;
-  timeout?: number;
-  // User-agent override (with restrictions)
-  userAgent?: string;
-}
-```
-
-**Permission Scope:** `web:fetch`
-
-**Risk Level:** High — can access cross-origin resources, potential for data exfiltration.
-
-**Mitigations:**
-- URL allowlisting per origin
-- Rate limiting
-- No access to user cookies/sessions unless explicitly granted
-
-### 4. Context APIs (Medium Priority)
-
-**Missing:** Access to browser context beyond active tab.
-
-```typescript
-// Proposed API
-interface BrowserContext {
-  // History
-  history: {
-    search(query: string, options?: HistorySearchOptions): Promise<HistoryItem[]>;
-    getVisits(url: string): Promise<VisitItem[]>;
-  };
-  
-  // Bookmarks
-  bookmarks: {
-    search(query: string): Promise<BookmarkItem[]>;
-    get(id: string): Promise<BookmarkItem>;
-    create(bookmark: BookmarkCreateInfo): Promise<BookmarkItem>;
-  };
-  
-  // Downloads
-  downloads: {
-    search(query: DownloadQuery): Promise<DownloadItem[]>;
-    download(options: DownloadOptions): Promise<number>;  // downloadId
-  };
-}
-```
-
-**Permission Scopes:**
-- `browser:history.read` — Search history
-- `browser:bookmarks.read` — Search bookmarks
-- `browser:bookmarks.write` — Create bookmarks
-- `browser:downloads.read` — List downloads
-- `browser:downloads.write` — Initiate downloads
-
-### 5. Multi-Modal Input (Future)
-
-**Missing:** Visual understanding of pages.
-
-```typescript
-// Proposed API
-interface VisualContext {
-  // Get visual representation for LLM
-  captureForVision(options?: CaptureOptions): Promise<{
-    screenshot: string;  // base64
-    elements: AnnotatedElement[];  // Elements with bounding boxes
-  }>;
-  
-  // Accessibility tree (structured page representation)
-  getAccessibilityTree(): Promise<AccessibilityNode>;
-}
-
-interface AnnotatedElement {
-  selector: string;
-  role: string;
-  name: string;
-  boundingBox: BoundingBox;
-  // For vision models to reference
-  annotationId: string;
-}
-```
-
-This enables "point and click" style visual agents.
-
----
-
-## Gap Analysis: Multi-Agent Support
-
-### The Discovery Problem
-
-If Agent A (Research) wants to delegate to Agent B (Code), how does it find Agent B?
-
-**Current state:** No discovery mechanism. Agents don't know about each other.
-
-### Options Considered
-
-#### Option 1: Orchestrator Pattern (No Protocol)
-
-One master agent coordinates sub-agents internally.
-
-```
-User Request
-     │
-     ▼
-┌─────────────────────────────────────┐
-│         Orchestrator Agent          │
-│  (decides which specialist to use)  │
-└────┬────────────────────────┬───────┘
-     │                        │
-     ▼                        ▼
-┌──────────┐            ┌──────────┐
-│ Research │            │   Code   │
-│  Agent   │            │  Agent   │
-└──────────┘            └──────────┘
-```
-
-**Pros:** Simple, no new protocols
-**Cons:** All agents must run in same process, no true multi-agent
-
-#### Option 2: MCP-as-Agents (Recommended for Local)
-
-Agents expose themselves as MCP servers with a `run_task` tool.
-
-```typescript
-// Agent as MCP Server
-{
-  name: "research-agent",
-  tools: [{
-    name: "run_task",
-    description: "Delegate a research task to this agent",
-    inputSchema: {
-      type: "object",
-      properties: {
-        task: { type: "string" },
-        context: { type: "object" }
-      }
-    }
-  }]
-}
-```
-
-Agent A finds Agent B via `agent.tools.list()` and calls it via `agent.tools.call()`.
-
-**Pros:** Works with existing infrastructure, tools compose naturally
-**Cons:** No streaming progress, synchronous only, limited metadata
-
-#### Option 3: A2A Protocol (For Distributed/Remote)
-
-Full agent-to-agent protocol with discovery, task lifecycle, streaming.
-
-**Pros:** Designed for the problem, rich semantics
-**Cons:** Additional complexity, overkill for local-only
-
-### Recommended Approach: Agent Registry
-
-A middle ground that enables multi-agent without full A2A complexity.
-
-```typescript
-// New namespace: agent.agents
-interface AgentRegistry {
-  // Agent lifecycle
-  register(config: AgentConfig): Promise<{ agentId: string }>;
-  unregister(agentId: string): Promise<void>;
-  
-  // Discovery
-  list(): Promise<AgentDescriptor[]>;
-  get(agentId: string): Promise<AgentDescriptor | null>;
-  
-  // Invocation
-  invoke(agentId: string, request: AgentRequest): AsyncIterable<AgentEvent>;
-  
-  // Messaging (for bidirectional communication)
-  send(agentId: string, message: AgentMessage): Promise<void>;
-  onMessage(callback: (from: string, message: AgentMessage) => void): void;
-}
-
-interface AgentConfig {
-  id: string;
-  name: string;
-  description: string;
-  
-  // What backs this agent
-  provider: string;           // LLM provider ID
-  model?: string;             // Specific model
-  systemPrompt?: string;      // Agent personality/role
-  
-  // What tools this agent has access to
-  tools?: string[];           // MCP tool names
-  mcpServers?: string[];      // Or entire MCP servers
-  
-  // Capabilities this agent provides
-  capabilities?: string[];    // e.g., ['research', 'coding', 'analysis']
-  
-  // Constraints
-  maxConcurrentTasks?: number;
-}
-
-interface AgentDescriptor extends AgentConfig {
-  status: 'idle' | 'busy' | 'offline';
-  currentTasks?: number;
-  registeredAt: number;
-  lastActiveAt: number;
-}
-
-interface AgentRequest {
-  task: string;
-  context?: Record<string, unknown>;
-  parentTaskId?: string;      // For task hierarchies
-  priority?: 'low' | 'normal' | 'high';
-}
-
-type AgentEvent =
-  | { type: 'status'; message: string }
-  | { type: 'progress'; percent: number; message?: string }
-  | { type: 'artifact'; name: string; content: string; mimeType?: string }
-  | { type: 'delegation'; toAgent: string; task: string }
-  | { type: 'token'; token: string }
-  | { type: 'final'; output: string; artifacts?: Artifact[] }
-  | { type: 'error'; error: { code: string; message: string } };
-
-interface AgentMessage {
-  type: string;
-  payload: unknown;
-  replyTo?: string;  // For request/response patterns
-}
-```
-
-### How Discovery Works
-
-```
+│                          WEB PAGE                                │
+│  window.ai · window.agent · navigator.modelContext              │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ postMessage (CHANNEL: web_agents_api)
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    BROWSER EXTENSION                             │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    AGENT REGISTRY                         │   │
-│  │                                                          │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
-│  │  │ Research    │  │ Code        │  │ Memory      │      │   │
-│  │  │ Agent       │  │ Agent       │  │ Agent       │      │   │
-│  │  │             │  │             │  │             │      │   │
-│  │  │ provider:   │  │ provider:   │  │ provider:   │      │   │
-│  │  │  anthropic  │  │  openai     │  │  ollama     │      │   │
-│  │  │             │  │             │  │             │      │   │
-│  │  │ tools:      │  │ tools:      │  │ tools:      │      │   │
-│  │  │  brave-     │  │  github/*   │  │  memory/*   │      │   │
-│  │  │  search/*   │  │  fs/*       │  │             │      │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘      │   │
-│  │                                                          │   │
-│  │  Registry provides:                                      │   │
-│  │  • list() - enumerate all registered agents              │   │
-│  │  • get(id) - get agent details                          │   │
-│  │  • invoke(id, task) - run task on agent                 │   │
-│  │  • send(id, msg) - direct messaging                     │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Example: Multi-Agent Task
-
-```javascript
-// User asks: "Research quantum computing and write a summary doc"
-
-// 1. Orchestrator (or user) registers specialized agents
-await agent.agents.register({
-  id: 'researcher',
-  name: 'Research Specialist',
-  provider: 'anthropic',
-  model: 'claude-3-5-sonnet',
-  systemPrompt: 'You are a research specialist...',
-  tools: ['brave-search/*', 'web-scraper/*'],
-  capabilities: ['research', 'summarization'],
-});
-
-await agent.agents.register({
-  id: 'writer',
-  name: 'Technical Writer',
-  provider: 'openai',
-  model: 'gpt-4o',
-  systemPrompt: 'You are a technical writer...',
-  tools: ['memory/*', 'filesystem/*'],
-  capabilities: ['writing', 'documentation'],
-});
-
-// 2. Discover available agents
-const agents = await agent.agents.list();
-console.log('Available agents:', agents.map(a => `${a.name} (${a.id})`));
-
-// 3. Orchestrator delegates to research agent
-const researchResults = [];
-for await (const event of agent.agents.invoke('researcher', {
-  task: 'Research recent developments in quantum computing',
-})) {
-  if (event.type === 'progress') {
-    console.log(`Research: ${event.percent}% - ${event.message}`);
-  }
-  if (event.type === 'artifact') {
-    researchResults.push(event);
-  }
-  if (event.type === 'final') {
-    console.log('Research complete:', event.output);
-  }
-}
-
-// 4. Orchestrator delegates to writer agent with research context
-for await (const event of agent.agents.invoke('writer', {
-  task: 'Write a technical summary document',
-  context: {
-    research: researchResults,
-    format: 'markdown',
-    audience: 'technical',
-  },
-})) {
-  if (event.type === 'final') {
-    console.log('Document:', event.output);
-  }
-}
-```
-
-### Agent-to-Agent Communication
-
-For more complex scenarios where agents need to communicate directly:
-
-```javascript
-// Agent A sets up message handler
-agent.agents.onMessage((fromAgentId, message) => {
-  if (message.type === 'clarification_request') {
-    // Another agent is asking for clarification
-    agent.agents.send(fromAgentId, {
-      type: 'clarification_response',
-      payload: { answer: '...' },
-      replyTo: message.replyTo,
-    });
-  }
-});
-
-// Agent B sends a message to Agent A
-await agent.agents.send('researcher', {
-  type: 'clarification_request',
-  payload: { question: 'Should I include historical context?' },
-  replyTo: crypto.randomUUID(),
-});
-```
-
----
-
-## Proposed Extensions
-
-### New Permission Scopes
-
-| Scope | Risk | Description |
-|-------|------|-------------|
-| `browser:activeTab.interact` | High | Click, fill, scroll on active tab |
-| `browser:activeTab.screenshot` | Medium | Capture tab screenshots |
-| `browser:navigate` | Medium | Navigate current tab |
-| `browser:tabs.read` | Low | List and query tabs |
-| `browser:tabs.manage` | Medium | Create, close, activate tabs |
-| `browser:history.read` | Medium | Search browsing history |
-| `browser:bookmarks.read` | Low | Search bookmarks |
-| `browser:bookmarks.write` | Medium | Create/modify bookmarks |
-| `browser:downloads.read` | Low | List downloads |
-| `browser:downloads.write` | Medium | Initiate downloads |
-| `web:fetch` | High | Proxy HTTP requests |
-| `agents:register` | Medium | Register agents |
-| `agents:invoke` | Medium | Invoke other agents |
-| `agents:message` | Low | Send messages to agents |
-
-### API Surface Summary
-
-```typescript
-// Existing
-window.ai.createTextSession()
-window.ai.providers.*
-window.ai.runtime.*
-window.agent.requestPermissions()
-window.agent.permissions.*
-window.agent.tools.*
-window.agent.browser.activeTab.readability()
-window.agent.run()
-window.agent.addressBar.*
-window.agent.mcp.*
-window.agent.chat.*
-
-// Proposed: Browser Control
-window.agent.browser.activeTab.click()
-window.agent.browser.activeTab.fill()
-window.agent.browser.activeTab.scroll()
-window.agent.browser.activeTab.screenshot()
-window.agent.browser.activeTab.waitForSelector()
-window.agent.browser.navigate()
-window.agent.browser.tabs.*
-window.agent.browser.history.*
-window.agent.browser.bookmarks.*
-window.agent.browser.downloads.*
-window.agent.web.fetch()
-
-// Proposed: Multi-Agent
-window.agent.agents.register()
-window.agent.agents.unregister()
-window.agent.agents.list()
-window.agent.agents.get()
-window.agent.agents.invoke()
-window.agent.agents.send()
-window.agent.agents.onMessage()
-```
-
----
-
-## Security Model: Browser Control
-
-Browser control is powerful and dangerous. We implement a **Same-Tab Only** model for web pages.
-
-### The Three Models
-
-| Model | Who Can Use | What They Can Control | Status |
-|-------|-------------|----------------------|--------|
-| **Same-Tab Only** | Web pages | Their own tab only | ✅ Implemented |
-| **Spawn and Control** | Trusted web pages | Tabs they create | 🔮 Future |
-| **Extension-Only** | Extension sidebar | Any tab (user visible) | 🔮 Future |
-
-### Model 1: Same-Tab Only (Implemented)
-
-Web pages can only interact with **their own DOM**. The tab ID is derived from the message sender, not user selection.
-
-```javascript
-// On example.com - this can ONLY interact with example.com's tab
-await agent.browser.activeTab.click('#submit');  // ✅ Works
-await agent.browser.activeTab.fill('#email', 'user@example.com');  // ✅ Works
-
-// Cannot control other tabs - there's no API for it
-```
-
-**How it works:**
-
-```
+│              WEB AGENTS API EXTENSION                           │
+│  • Implements the page-facing API                              │
+│  • Permission prompts, scope storage                           │
+│  • Same-tab + spawned-tab automation                           │
+│  • Multi-agent registry (page-bound agents)                    │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ chrome.runtime.sendMessage (cross-extension)
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  TAB A: example.com (tabId: 123)                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │ await agent.browser.activeTab.click('#btn');                ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              │ Message includes tabId: 123 from sender
-                              ▼
+│                    HARBOR EXTENSION                             │
+│  • LLM provider selection (Ollama, OpenAI, Anthropic, native)  │
+│  • MCP server hosting (WASM/JS in-browser, native via bridge)  │
+│  • Chat sidebar UI                                             │
+│  • Internal agents/ surface (window.harbor — extension-side)   │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ Native Messaging (length-prefixed JSON)
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  BACKGROUND SCRIPT                                               │
-│  • Extracts tabId from port.sender.tab.id (not from payload!)   │
-│  • Executes click in tab 123 only                               │
-│  • Cannot be tricked into controlling other tabs                │
+│                       RUST BRIDGE                               │
+│  • Provider connections (Ollama, OpenAI, Anthropic, …)         │
+│  • Native MCP servers (subprocess isolation)                   │
+│  • OAuth flows                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Permissions:**
-- `browser:activeTab.read` — Read text content (readability)
-- `browser:activeTab.interact` — Click, fill, scroll, select
-- `browser:activeTab.screenshot` — Capture screenshots
+### Real gaps (May 2026)
 
-**Feature Flags (disabled by default):**
-These APIs are gated behind feature flags that must be enabled in Harbor settings:
-- `browserInteraction` — Required for click, fill, scroll, select
-- `screenshots` — Required for screenshot()
+The four gaps that *actually* block the next class of products:
 
-This provides defense-in-depth: even if a page has the permission, the feature must be globally enabled.
+1. **Persistent (always-on) agent runtime.** Today every `agent.agents` instance is bound to an open page. Close the tab, the agent dies. A "Hermes-style" assistant — one that watches your browsing, runs on a schedule, or reacts to system events — needs an agent host that lives in the Harbor extension's service worker, owns its own LLM session and memory, and exposes a UI surface that isn't a page.
+2. **Visual context.** Computer-use models depend on screenshots paired with element bounding boxes / accessibility trees. We have `screenshot()` and `getElements()`; we don't have a unified `captureForVision()` that fuses them.
+3. **A non-page consumer surface.** `bridge-rs` is a clean local broker for LLMs and MCP, but there's no public local-socket / WebSocket / HTTP surface that lets a Node program, a CLI, or another extension talk to Harbor without going through a page. `bridge-ts` is the right place; finish it.
+4. **Cross-tab privileged automation.** The same-tab and spawned-tab models are correct for untrusted pages. They are wrong for an agent the user has explicitly designated as their *driver*. We need a third trust tier (extension-side automation) so an agentic browser product can drive any tab the user is watching, with the user watching, without forking Harbor.
 
-### Model 2: Spawn and Control (Future)
-
-For automation scenarios, web pages could create new tabs and control only tabs they created.
-
-```javascript
-// On automation-tool.com (future API)
-const tabId = await agent.browser.tabs.create({ url: 'https://target.com' });
-await agent.browser.tabs.click(tabId, '#search');  // Only works because we created it
-```
-
-**Safeguards:**
-- Track which origin created which tabs
-- Tabs "owned" by an origin can only be controlled by that origin
-- User explicitly grants "spawn tabs" permission
-
-### Model 3: Extension-Only (Future)
-
-Full browser control from the extension's own UI (sidebar, popup). The user is watching.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  EXTENSION SIDEBAR (trusted context)                             │
-│                                                                  │
-│  User: "Book me a flight to NYC"                                │
-│  Agent: [Opens kayak.com, fills form, user watches]             │
-│                                                                  │
-│  • Full tab control                                             │
-│  • User sees what's happening                                   │
-│  • Code runs in extension context, not web page                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Developer Options
-
-| Option | Complexity | Control Level | Example Use Case |
-|--------|------------|---------------|------------------|
-| MCP Servers | Low | No browser control | Search, databases, APIs |
-| Same-Tab Interaction | Medium | Own page only | Form assistants, page analyzers |
-| Request Automation | Medium | User-approved steps | Guided workflows |
-| Fork Harbor | High | Full control | Specialized browser products |
-
-### Security Risks and Mitigations
-
-| Risk | Mitigation |
-|------|------------|
-| Page A controls Page B | Same-Tab Only: tabId from sender, not payload |
-| Screenshot data exfiltration | Separate permission, rate limiting |
-| Password field interaction | Could block password fields (not yet implemented) |
-| Invisible automation | All interaction is on the calling page only |
+Items 1 and 4 are the ones that unblock Hermes-style agents and agentic browsers respectively. Items 2 and 3 are accelerants for both.
 
 ---
 
-## Implementation Status
+## Five things people are likely to build on top
 
-### Phase 1: Same-Tab Browser Control ✅ COMPLETE
+Use these as concrete design forcing functions. Each one stresses a different part of the surface.
 
-| API | Permission | Feature Flag | Status |
-|-----|------------|--------------|--------|
-| `activeTab.readability()` | `browser:activeTab.read` | None | ✅ Always available |
-| `activeTab.click(selector)` | `browser:activeTab.interact` | `browserInteraction` | ✅ Behind flag |
-| `activeTab.fill(selector, value)` | `browser:activeTab.interact` | `browserInteraction` | ✅ Behind flag |
-| `activeTab.select(selector, value)` | `browser:activeTab.interact` | `browserInteraction` | ✅ Behind flag |
-| `activeTab.scroll(options)` | `browser:activeTab.interact` | `browserInteraction` | ✅ Behind flag |
-| `activeTab.getElement(selector)` | `browser:activeTab.read` | None | ✅ Always available |
-| `activeTab.waitForSelector(selector)` | `browser:activeTab.read` | None | ✅ Always available |
-| `activeTab.screenshot()` | `browser:activeTab.screenshot` | `screenshots` | ✅ Behind flag |
+### 1. Hermes — an always-on personal assistant
 
-**To enable:** Open Harbor Directory → expand "Advanced Features" → toggle the flags.
+**Shape.** A persistent agent that runs in the Harbor extension itself (not in a page). It has its own LLM session, its own memory, its own subset of MCP tools. It surfaces in the Harbor sidebar (and optionally a system tray / popover). It can react to scheduled triggers, tab events, and explicit user prompts.
 
-### Phase 2: Navigation and Tabs (Planned)
+**What today's surface gives you.**
+- The Harbor extension already has long-lived LLM connections via `bridge-rs`.
+- `agent.sessions.create({capabilities, limits})` is the right *shape* for an agent's permissioned session.
+- The `multi-agent/` directory inside the Harbor extension already has registry primitives.
+- `agent.chat.open()` lets an agent surface a chat UI back to the user.
 
-| API | Permission | Status |
-|-----|------------|--------|
-| `browser.navigate(url)` | `browser:navigate` | 🔮 Planned |
-| `browser.tabs.create()` | `browser:tabs.manage` | 🔮 Planned |
-| `browser.tabs.list()` | `browser:tabs.read` | 🔮 Planned |
-| `browser.tabs.close(tabId)` | `browser:tabs.manage` | 🔮 Planned |
+**What's missing.**
+- A `harbor.background-agent` API on the **extension side** (not page-side) for registering agents that run inside the Harbor service worker.
+- An event bus (`onTabUpdated`, `onSchedule`, `onSpoken`, `onCustomEvent`) that an extension-side agent can subscribe to.
+- A persistent memory store with retention policy and per-agent ACLs.
+- A trust contract UI: "this agent runs continuously and may take these actions on your behalf — review weekly."
 
-### Phase 3: Multi-Agent Support (Planned)
+**See [`BUILDING_ON_HARBOR.md`](./BUILDING_ON_HARBOR.md) for the concrete prototype path.**
 
-| API | Permission | Status |
-|-----|------------|--------|
-| `agents.register(config)` | `agents:register` | 🔮 Planned |
-| `agents.list()` | None | 🔮 Planned |
-| `agents.invoke(id, task)` | `agents:invoke` | 🔮 Planned |
-| `agents.send(id, message)` | `agents:message` | 🔮 Planned |
+### 2. An agentic browser (computer-use style)
 
-### Phase 4: Request Automation (Planned)
+**Shape.** A browser experience built on top of Firefox/Chrome where the address bar and a sidebar are dominated by an agent that drives any tab the user is watching. Atlas/Comet, but with the user's own model.
 
-A system where web pages can **request** automations that the extension executes with user oversight.
+**What today's surface gives you.**
+- `agent.browser.navigate`, `tabs.{create, list, close}`, `tab.{readability, getHtml}` — all there, behind `browserControl`.
+- `agent.browser.activeTab.{click, fill, scroll, screenshot, getElements}` — there, behind `browserInteraction`.
+- The `agent.run` autonomous loop with MCP tool calling.
+- Spawn-and-control trust model: tabs an origin spawned, that origin can drive.
 
-```javascript
-// Web page describes what it wants (future API)
-await agent.requestAutomation({
-  name: 'Submit expense report',
-  steps: [
-    { action: 'navigate', url: 'https://expenses.company.com' },
-    { action: 'fill', selector: '#amount', value: '150.00' },
-    { action: 'click', selector: '#submit' },
-  ],
-  reason: 'Submit your expense report'
-});
+**What's missing.**
+- **Cross-tab privileged automation.** Spawn-and-control is the right model for untrusted pages but blocks an agent the user has explicitly elevated. Add a third trust tier: **extension-side automation** with a one-time user grant ("this is my agent browser; let it drive any tab while it's the active extension").
+- **Vision-fused capture.** A single `agent.browser.activeTab.captureForVision({format})` that returns a screenshot, a flat element list with bounding boxes and stable refs, and an accessibility-tree snapshot. Today you'd `screenshot()` and `getElements()` and stitch them yourself.
+- **Robust selectors.** `getElements()` builds CSS-selector-like strings as `ref`. They survive small DOM changes only sometimes. We need ref handles that map to a deterministic, idempotent locator (XPath + role + accessible-name).
+- **Planning loop with checkpoints.** `agent.run` is a single tool-using loop. Agentic browsers want longer plans with explicit `pause / replay / undo` semantics. `agent.sessions` is the right container; expose `session.runStep()` and `session.replay()`.
 
-// User sees a prompt reviewing the steps
-// User approves
-// Extension executes with user watching
-```
+### 3. A site-specific assistant (BYOC)
 
-### Phase 5: Advanced Features (Future)
+**Shape.** Acme.com hosts an MCP server with `search_products`, `add_to_cart`. The site renders a button: "talk to your assistant about this." User clicks, Harbor opens the user's configured chat with Acme's tools loaded.
 
-1. Visual context for LLMs (`captureForVision()`)
-2. Accessibility tree access
-3. Remote agent discovery (A2A-style)
-4. Agent marketplace/sharing
+**What today's surface gives you.** This is the only one that's effectively **complete**. `agent.mcp.register({url, name, tools})` and `agent.chat.open({systemPrompt, tools, style})` ship today. See `demo/web-agents/bring-your-chatbot/` for a working example. The only remaining work is documentation and discovery (the `<link rel="mcp-server">` declarative pattern is plumbed but not widely used).
 
----
+### 4. A multi-agent research workflow
 
-## Open Questions
+**Shape.** A research orchestrator page registers as one agent, finds a writer agent on a different origin via `agent.agents.discover`, pipes them together. Each agent has its own LLM, its own tools, its own permissions.
 
-1. **Should browser control be exposed to web pages?**
-   - Option A: Only extension sidebar/popup can use these APIs
-   - Option B: Web pages can request permission (higher risk)
-   - Option C: Hybrid — basic ops for pages, full control for extension
+**What today's surface gives you.**
+- `agent.agents.{register, discover, list, invoke}` and `agent.agents.orchestrate.{pipeline, parallel, route}`. Behind the `multiAgent` flag.
 
-2. **How should agent permissions work?**
-   - Option A: Agents inherit invoker's permissions
-   - Option B: Agents have their own permission sets
-   - Option C: Intersection of invoker and agent permissions
+**What's missing.**
+- Agents are page-bound (see Hermes section). To run a real workflow, both pages have to stay open the whole time. Lifting at least the long-running orchestrator side into the extension would solve this.
+- Permission inheritance is unspecified: when agent A invokes agent B, whose permissions apply? Today: each agent uses its own origin's grants. Document this; consider a request-time intersection model.
 
-3. **Should agents persist across browser sessions?**
-   - Option A: Ephemeral only (recreate on each session)
-   - Option B: Persistent registration (stored in extension storage)
-   - Option C: User choice per agent
+### 5. A local AI broker for non-browser apps
 
-4. **How to handle agent costs/quotas?**
-   - Different agents may use different (paid) LLM providers
-   - Need usage tracking and limits per agent
+**Shape.** A Node script, a desktop app, a CLI. They want to talk to "the user's local LLM" without each app reimplementing provider selection, key management, and tool routing. Harbor is the natural broker — the Rust bridge already does the work.
+
+**What today's surface gives you.**
+- `bridge-rs` exists, runs locally, manages providers and MCP servers, and speaks length-prefixed JSON over native messaging.
+- `bridge-ts/` has a TypeScript scaffold for the same.
+
+**What's missing.**
+- A documented, stable local socket / WebSocket / HTTP surface for non-browser consumers. Native messaging is browser-extension-only. Adding a localhost WebSocket on the bridge (with a one-time pairing UI in the Harbor sidebar) makes Harbor immediately useful to every local AI tool.
+- An npm package (`@harbor/client`) that wraps it.
 
 ---
 
-## Conclusion
+## Phasing the work
 
-The Web Agent API provides a solid foundation for AI-enhanced web applications. To support full browser agency and multi-agent architectures, we need:
+A pragmatic order, optimized for unlocking the most ambitious products first.
 
-1. **Browser Control APIs** — Page interaction, navigation, tab management
-2. **Agent Registry** — Discovery, lifecycle, invocation of multiple agents
-3. **Agent Communication** — Messaging and coordination primitives
-4. **Enhanced Permissions** — Fine-grained control over new capabilities
+### Phase A — Polish what ships (now)
 
-The recommended approach is incremental: start with browser control (highest immediate value), then add multi-agent support as use cases emerge.
+The surface is bigger than the docs claim. Close the gap.
+
+- Fix doc drift between `spec/explainer.md`, `docs/LLMS.txt`, and `docs/WEB_AGENTS_API.md` (this PR starts that).
+- Reconcile `PermissionScope` definitions across `injected.ts`, `types.ts`, `permission-prompt.ts`, and the spec WebIDL.
+- Wire missing handlers (`agent.browser.navigate`, `agent.browser.fetch`) so the documented `browserControl` surface actually works.
+- Ship a thin `agent.capabilities()` so consumers can ask the API what's available without trial-and-error.
+- Quiet the extension's debug logging on every web page load.
+
+### Phase B — Visual context + selector hardening (next)
+
+Unblock agentic-browser-class consumers without changing the trust model.
+
+- `agent.browser.activeTab.captureForVision()` — single call returning screenshot + element list + accessibility tree.
+- Stable ref handles (XPath + role + accessible-name).
+- `waitForSelector(ref, {timeout, visible})` — already in the spec; add the implementation.
+- `boundingBox(ref)`.
+
+### Phase C — Persistent agent runtime (the Hermes lane)
+
+This is the biggest design and security lift. Don't conflate it with anything else.
+
+- New extension-side surface: `harbor.backgroundAgents.register({name, systemPrompt, tools, schedule, triggers, memory})`.
+- An event bus inside the Harbor extension: tab events, schedule, custom events.
+- Persistent memory store with retention policy.
+- Trust contract UI: an "Agents" tab in the Harbor sidebar that shows what each agent has done and lets the user pause/revoke.
+- A small page-side surface (`agent.backgroundAgents.list()` etc.) so pages can ask which background agents the user has, and route requests to them, without being able to register one themselves.
+
+### Phase D — Privileged extension automation (the agentic-browser lane)
+
+- Third trust tier: an "agent browser mode" the user explicitly enables (one-time grant, plus a clear sidebar indicator while it's on).
+- A separate API surface (`harbor.driver.*`) that can drive any tab while the mode is active.
+- This is best built as a **separate extension** that depends on Harbor, so the regular Harbor extension's security boundary stays narrow.
+
+### Phase E — Non-browser consumers (the SDK lane)
+
+- Local WebSocket on `bridge-rs` with a pairing handshake.
+- `@harbor/client` npm package with the same shape as the page-facing API where it makes sense.
+- A small "Apps" tab in the Harbor sidebar showing connected non-browser clients, with revoke.
 
 ---
 
-*This document is a design proposal. Implementation details may change based on security review and user feedback.*
+## Security model recap (unchanged)
+
+Three trust tiers, two existing and one proposed:
+
+| Tier | Who | What they can drive | Status |
+|---|---|---|---|
+| Same-tab | Any web page (with permission) | Their own DOM | ✅ Implemented |
+| Spawn-and-control | Any web page (with permission) | Tabs they spawned | ✅ Implemented |
+| Extension-driver | A user-elevated agent extension | Any tab while elevated | 🔮 Phase D |
+
+The page-facing security model **does not change** when we add Phases B/C/E. Phase D adds a new tier, behind a one-time user grant and a persistent UI indicator.
+
+---
+
+## Open questions
+
+1. **Permission inheritance across agents.** When agent A on origin X invokes agent B on origin Y: whose permissions apply? Today each origin's grants apply independently. A more conservative model would be the intersection.
+2. **Agent costs.** Different agents may use different (paid) providers. Background agents make this material. Surface usage in the sidebar; consider per-agent quotas.
+3. **Data retention for background agents.** What does Harbor remember on the user's behalf? With what retention? With what ACL toward other agents?
+4. **Where does Hermes live?** Inside Harbor (`extension/src/agents/`) or as a separate extension that depends on Harbor's APIs? Building it as a separate extension is the cleaner path — it forces us to publish a stable extension-to-extension contract, which is how the agentic-browser tier will work too.
+
+---
+
+*This document is a living roadmap. The shipped surface is in [`docs/WEB_AGENTS_API.md`](./WEB_AGENTS_API.md). The standardization track is in [`spec/explainer.md`](../spec/explainer.md).*

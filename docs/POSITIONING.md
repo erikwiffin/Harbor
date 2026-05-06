@@ -46,7 +46,7 @@ The browser–AI landscape has crystallized into four camps. Harbor is none of t
 
 ### Camp 3 — The standards converging
 
-- **WebMCP** — W3C Community Group draft, April 2026. `navigator.modelContext.registerTool()` lets pages declare JavaScript-backed tools an agent can call. **Solves the page-side half** of the problem.
+- **WebMCP** — W3C Community Group draft, April 2026. `navigator.modelContext.addTool()` lets pages declare JavaScript-backed tools an agent can call. **Solves the page-side half** of the problem.
 - **Chrome Prompt API** — `window.LanguageModel`, stable in Chrome 138 extensions, in origin trial for web pages. Gives pages on-device Gemini Nano. **One model, one browser**.
 - **Model Context Protocol (MCP)** — Open protocol from Anthropic, now ubiquitous on the backend. Defines how agents talk to tool servers.
 
@@ -140,7 +140,7 @@ This is the table that goes on the website and in decks. Numbers/labels are May 
 - You write `await window.ai.createTextSession()` and the user's model handles it. No keys, no backend, no per-user billing.
 - You pick which MCP servers your app integrates. The user approves them. You don't ship credentials.
 - One code path works against Chrome's Prompt API (when Gemini Nano is available) and against Harbor (when the user has a different model).
-- You expose your domain logic via `navigator.modelContext.registerTool()` (the W3C WebMCP API). Any agent — Harbor today, Chrome's tomorrow, Atlas's eventually — can call it.
+- You expose your domain logic via `navigator.modelContext.addTool()` (the W3C WebMCP API). Any agent — Harbor today, Chrome's tomorrow, Atlas's eventually — can call it.
 
 ### For people thinking about security and privacy
 

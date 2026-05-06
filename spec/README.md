@@ -139,16 +139,18 @@ await window.agent.requestPermissions({
   reason: 'Research assistant needs search access'
 });
 
-// Choose to run an autonomous agent — or call tools manually, your call
+// Run an autonomous agent — yields typed events.
+// (Requires the `toolCalling` feature flag in the Web Agents API sidebar.)
 for await (const event of window.agent.run({
   task: 'Find recent news about AI safety'
 })) {
-  if (event.type === 'token') process.stdout.write(event.token);
-  if (event.type === 'final') console.log('\n\nDone:', event.output);
+  if (event.type === 'thinking')  console.log(event.content);
+  if (event.type === 'tool_call') console.log('→', event.tool, event.args);
+  if (event.type === 'final')     console.log('Done:', event.output);
 }
 ```
 
-**`navigator.modelContext`** — Register your own tools. Choose what capabilities your page provides to the AI.
+**`navigator.modelContext`** — Register your own tools (W3C WebMCP). Choose what capabilities your page provides to the AI.
 ```javascript
 navigator.modelContext.addTool({
   name: 'search_products',

@@ -68,6 +68,8 @@ import {
   handleBrowserScreenshot,
   handleBrowserGetElements,
   handleBrowserReadability,
+  handleBrowserNavigate,
+  handleBrowserFetch,
 } from './browser-handlers';
 
 import {
@@ -158,6 +160,10 @@ handlers.set('agent.browser.activeTab.scroll', handleBrowserScroll);
 handlers.set('agent.browser.activeTab.screenshot', handleBrowserScreenshot);
 handlers.set('agent.browser.activeTab.getElements', handleBrowserGetElements);
 handlers.set('agent.browser.activeTab.readability', handleBrowserReadability);
+
+// Top-level browser handlers (active tab)
+handlers.set('agent.browser.navigate', handleBrowserNavigate);
+handlers.set('agent.browser.fetch', handleBrowserFetch);
 
 // Tab management handlers
 handlers.set('agent.browser.tabs.create', handleTabsCreate);

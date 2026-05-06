@@ -52,7 +52,7 @@
     </p>
     <div class="meta">
       <span>Status · draft</span>
-      <span>Version · 1.4</span>
+      <span>Version · v1.4</span>
       <span>Updated · May 2026</span>
     </div>
 
@@ -100,6 +100,8 @@ const reply = await session.prompt("Summarize this page.");</pre>
   reason: "Research assistant needs search.",
 });
 
+// Note: agent.run is gated behind the toolCalling feature flag in the
+// Web Agents API sidebar. It yields typed events.
 for await (const ev of window.agent.run({
   task: "find recent press on quantum chips",
 })) {
@@ -112,11 +114,11 @@ for await (const ev of window.agent.run({
       The page exposes its own JavaScript-backed tools. Any agent — Harbor today,
       Chrome's Auto Browse tomorrow — can call them.
     </p>
-    <pre class="ex-code" style="white-space: pre">navigator.modelContext.registerTool({
+    <pre class="ex-code" style="white-space: pre">navigator.modelContext.addTool({
   name:        "search_archive",
   description: "Search our 20-year archive",
   inputSchema: { type: "object", properties: { query: { type: "string" } } },
-  execute:     ({ query }) =&gt; searchArchive(query),
+  handler:     ({ query }) =&gt; searchArchive(query),
 });</pre>
 
     <h2 id="permissions">Permission model</h2>
@@ -124,13 +126,25 @@ for await (const ev of window.agent.run({
       Every capability requires explicit user consent, scoped per origin and
       revocable. Same posture as <code>geolocation</code> and the camera.
     </p>
+    <p>The core scopes:</p>
     <ul>
       <li><code>model:prompt</code> — generate text</li>
-      <li><code>model:tools</code> — let the model pick and call tools</li>
-      <li><code>mcp:tools.list</code> — list tools the user has connected</li>
-      <li><code>mcp:tools.call</code> — execute specific tools</li>
+      <li><code>model:tools</code> — let the model pick and call tools (autonomous loop)</li>
+      <li><code>model:list</code> — list configured providers and models</li>
+      <li><code>mcp:tools.list</code> / <code>mcp:tools.call</code> — list and execute MCP tools</li>
+      <li><code>mcp:servers.register</code> — register a website-provided MCP server (BYOC)</li>
       <li><code>browser:activeTab.read</code> — read the current page</li>
+      <li><code>browser:activeTab.interact</code> / <code>activeTab.screenshot</code> — same-tab interaction (gated)</li>
+      <li><code>browser:tabs.read</code> / <code>tabs.create</code> — list and spawn-and-control tabs (gated)</li>
+      <li><code>chat:open</code> — open the user's chat surface</li>
+      <li><code>web:fetch</code> — CORS-bypassing fetch (gated)</li>
+      <li><code>agents:register</code> / <code>agents:invoke</code> — multi-agent surface (gated)</li>
     </ul>
+    <p style="color: var(--ink-mute); font-size: var(--t-small);">
+      Higher-risk scopes are additionally gated by extension-level feature flags
+      (<code>browserInteraction</code>, <code>browserControl</code>, <code>toolCalling</code>,
+      <code>multiAgent</code>) so users can disable whole capability classes globally.
+    </p>
     <p>
       Permissions are origin-scoped: <code>example.com</code>
       granting <code>model:tools</code> does not grant it to <code>other.com</code>.
@@ -236,7 +250,7 @@ for await (const ev of window.agent.run({
     </div>
     <div class="foot-bottom">
       <span>© 2026 · Harbor draft proposal</span>
-      <span>v0.3 · last updated may 2026</span>
+      <span>spec v1.4 · last updated may 2026</span>
     </div>
   </div>
 </footer>

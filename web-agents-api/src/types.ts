@@ -10,17 +10,23 @@
 
 export type PermissionScope =
   | 'model:prompt'              // Text generation
+  | 'model:tools'               // Autonomous agent (model picks and calls tools)
   | 'model:list'                // List providers/models
   | 'mcp:tools.list'            // List available tools
   | 'mcp:tools.call'            // Execute tools
+  | 'mcp:servers.register'      // Register a website-provided MCP server (BYOC)
   | 'browser:activeTab.read'    // Read page content
   | 'browser:activeTab.interact'// Click, fill, scroll
   | 'browser:activeTab.screenshot' // Take screenshots
   | 'browser:tabs.create'       // Create and control new tabs
   | 'browser:tabs.read'         // Read tab URLs/titles
-  | 'browser:navigate'          // Navigate current tab
+  | 'browser:navigate'          // Navigate the active tab
+  | 'web:fetch'                 // CORS-bypassing fetch via the extension
+  | 'chat:open'                 // Open the user's chat surface
   | 'agents:register'           // Register this page as an agent
-  | 'agents:invoke';            // Invoke other agents (required for multi-agent orchestration)
+  | 'agents:discover'           // Discover other agents
+  | 'agents:invoke'             // Invoke other agents
+  | 'agents:message';           // Send messages / broadcasts to other agents
 
 export type PermissionGrantType =
   | 'granted-once'     // Valid for 10 minutes, tab-scoped
@@ -325,12 +331,19 @@ export const ErrorCodes = {
   NOT_INSTALLED: 'ERR_NOT_INSTALLED',
   PERMISSION_DENIED: 'ERR_PERMISSION_DENIED',
   SCOPE_REQUIRED: 'ERR_SCOPE_REQUIRED',
+  FEATURE_DISABLED: 'ERR_FEATURE_DISABLED',
   TOOL_NOT_ALLOWED: 'ERR_TOOL_NOT_ALLOWED',
+  TOOL_NOT_FOUND: 'ERR_TOOL_NOT_FOUND',
   TOOL_FAILED: 'ERR_TOOL_FAILED',
+  TOOL_TIMEOUT: 'ERR_TOOL_TIMEOUT',
   MODEL_FAILED: 'ERR_MODEL_FAILED',
   SESSION_NOT_FOUND: 'ERR_SESSION_NOT_FOUND',
   HARBOR_NOT_FOUND: 'ERR_HARBOR_NOT_FOUND',
   TIMEOUT: 'ERR_TIMEOUT',
+  INVALID_REQUEST: 'ERR_INVALID_REQUEST',
+  ELEMENT_NOT_FOUND: 'ERR_ELEMENT_NOT_FOUND',
+  AGENT_FAILED: 'ERR_AGENT_FAILED',
+  HANDLER_FAILED: 'ERR_HANDLER_FAILED',
   INTERNAL: 'ERR_INTERNAL',
   AGENT_NOT_FOUND: 'ERR_AGENT_NOT_FOUND',
   AGENT_NOT_ACCEPTING: 'ERR_AGENT_NOT_ACCEPTING',

@@ -163,11 +163,11 @@
 
       <div class="codecard">
         <div class="codecard-head"><span>3 · a page declares its own tool · W3C WebMCP</span><span class="num">navigator.modelContext</span></div>
-<pre><code><span class="tk-n">navigator</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">registerTool</span>({
+<pre><code><span class="tk-n">navigator</span>.<span class="tk-p">modelContext</span>.<span class="tk-f">addTool</span>({
   <span class="tk-p">name</span>:        <span class="tk-s">"search_archive"</span>,
   <span class="tk-p">description</span>: <span class="tk-s">"Search our 20-year archive"</span>,
   <span class="tk-p">inputSchema</span>: { <span class="tk-p">type</span>: <span class="tk-s">"object"</span>, <span class="tk-p">properties</span>: { <span class="tk-p">query</span>: { <span class="tk-p">type</span>: <span class="tk-s">"string"</span> } } },
-  <span class="tk-p">execute</span>:     ({ <span class="tk-n">query</span> }) =&gt; <span class="tk-f">searchArchive</span>(<span class="tk-n">query</span>),
+  <span class="tk-p">handler</span>:     ({ <span class="tk-n">query</span> }) =&gt; <span class="tk-f">searchArchive</span>(<span class="tk-n">query</span>),
 });</code></pre>
       </div>
     </div>
@@ -364,7 +364,7 @@
       <div>
         <p class="name">WebMCP</p>
         <p class="by">W3C · early draft</p>
-        <p>Pages declare tools; agents call them. <code>navigator.modelContext.registerTool()</code>. The verb-half of the puzzle.</p>
+        <p>Pages declare tools; agents call them. <code>navigator.modelContext.addTool()</code>. The verb-half of the puzzle.</p>
       </div>
       <div>
         <p class="name">MCP</p>
@@ -472,7 +472,7 @@
           <h4>An archive that searches itself with your words.</h4>
           <p>A 20-year news archive registers <code>search_archive</code> as a tool. Your AI uses it the way it would use any retrieval tool. The archive doesn't ship a model.</p>
         </div>
-        <pre class="ex-code">navigator.modelContext.registerTool({ name: "search_archive", … })</pre>
+        <pre class="ex-code">navigator.modelContext.addTool({ name: "search_archive", … })</pre>
       </div>
 
       <div class="example">
@@ -499,7 +499,7 @@
           <h4>An accessibility shortcut for everyone.</h4>
           <p>Pages declare semantic tools, not just ARIA. Screen-reader users — and everyone else — get an agent that actually understands the page's verbs.</p>
         </div>
-        <pre class="ex-code">registerTool({ name: "open_chapter", inputSchema: { … } })</pre>
+        <pre class="ex-code">addTool({ name: "open_chapter", inputSchema: { … } })</pre>
       </div>
 
       <div class="example">

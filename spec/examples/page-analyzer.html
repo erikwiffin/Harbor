@@ -277,11 +277,9 @@
         
         const textEl = document.getElementById('analysis-text');
         
-        for await (const event of session.promptStreaming(prompts[type])) {
-          if (event.type === 'token') {
-            response += event.token;
-            textEl.textContent = response;
-          }
+        for await (const chunk of session.promptStreaming(prompts[type])) {
+          response += chunk;
+          textEl.textContent = response;
         }
         
       } catch (err) {

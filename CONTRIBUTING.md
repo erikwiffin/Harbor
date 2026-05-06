@@ -37,30 +37,40 @@ git submodule update --init --recursive
 
 ### Full Build
 
+Harbor is **two extensions plus a native bridge**. You need to build all three.
+
 ```bash
-# Build the Rust bridge
+# 1. Build the Rust bridge
 cd bridge-rs
 cargo build --release
+./install.sh        # installs the native messaging manifest
 cd ..
 
-# Build the extension
+# 2. Build the Harbor extension (LLM/MCP infrastructure)
 cd extension
 npm install
-npm run build
+npm run build       # outputs to dist-firefox/ (default); also: build:chrome, build:safari
 cd ..
 
-# Install native messaging manifest
-cd bridge-rs
-./install.sh
+# 3. Build the Web Agents API extension (window.ai / window.agent)
+cd web-agents-api
+npm install
+npm run build       # outputs to dist-firefox/
 cd ..
 ```
 
-### Load Extension for Testing
+> Firefox is the primary target. Use `npm run build:chrome` (or `build:all`) when you need Chrome builds. See `AGENTS.md`.
 
-1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on..."
-3. Select `extension/dist/manifest.json`
-4. The Harbor sidebar icon should appear
+### Load Extensions for Testing (Firefox)
+
+Both extensions must be loaded together:
+
+1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…** and select `extension/dist-firefox/manifest.json` (the Harbor extension).
+3. Click **Load Temporary Add-on…** again and select `web-agents-api/dist-firefox/manifest.json` (the Web Agents API extension).
+4. The Harbor sidebar icon should appear. Open it and confirm "Bridge: Connected".
+
+For Chrome, use `dist-chrome/` instead and follow `docs/QUICKSTART_CHROME.md` (Chrome requires updating the native messaging manifest with the extension ID).
 
 ---
 
@@ -77,15 +87,18 @@ harbor/
 │   │   ├── llm/            # LLM provider abstraction
 │   │   ├── mcp/            # MCP protocol & host
 │   │   └── policy/         # Feature flags
-│   └── dist/               # Built output
+│   ├── dist-firefox/       # Built output (Firefox, default)
+│   └── dist-chrome/        # Built output (Chrome)
 │
 ├── web-agents-api/         # Web Agents API Extension - Implements window.ai/agent
 │   ├── src/
 │   │   ├── background.ts   # Cross-extension messaging to Harbor
-│   │   ├── injected.ts     # window.ai and window.agent implementation
-│   │   ├── content-script.ts  # Script injection
-│   │   └── policy/         # Permission system
-│   └── dist/               # Built output
+│   │   ├── injected.ts     # window.ai / window.agent / navigator.modelContext
+│   │   ├── content-script.ts  # Script injection bridge
+│   │   ├── handlers/       # Message routing (ai.*, agent.*)
+│   │   └── policy/         # Feature flags
+│   ├── dist-firefox/       # Built output (Firefox, default)
+│   └── dist-chrome/        # Built output (Chrome)
 │
 ├── bridge-rs/              # Rust Native Messaging Bridge
 │   ├── src/

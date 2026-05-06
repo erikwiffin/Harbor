@@ -69,14 +69,14 @@ You can also launch the demos directly from the Harbor extension sidebar:
 
 ## Bring Your Own Chatbot Demo
 
-The "Bring Your Own Chatbot" (BYOC) demo is a **concept demonstration** showing how websites could integrate with the user's own AI chatbot:
+The "Bring Your Own Chatbot" (BYOC) demo shows how websites integrate with the user's own AI chatbot:
 
 1. **Website-Provided Tools**: Instead of websites embedding their own AI, they provide MCP servers that the user's chatbot can access
 2. **User Control**: The user's own chatbot (with their preferences, history, and privacy settings) handles the AI interactions
 3. **Permission Flow**: Users explicitly grant permission for websites to register MCP servers
 4. **Graceful Degradation**: Works without the Web Agent API by falling back to a simulated mode
 
-**Note**: This demo proposes new APIs (`agent.mcp.register()`, `agent.chat.open()`) that are not yet implemented. See the [implementation plan](web-agents/bring-your-chatbot/README.md) for details on proposed API extensions.
+`agent.mcp.register()`, `agent.mcp.unregister()`, `agent.mcp.discover()`, and `agent.chat.{canOpen, open, close}` are implemented in the Web Agents API extension. See [`web-agents/bring-your-chatbot/README.md`](web-agents/bring-your-chatbot/README.md) for the full demo and `docs/WEB_AGENTS_API.md` for the API reference.
 
 ## Email Chat Demo
 
@@ -105,22 +105,37 @@ console.log(response);
 
 ### Agent with Tools
 
+`agent.run()` requires the `toolCalling` feature flag in the Web Agents API sidebar. It yields **typed events** (not raw tokens):
+
 ```javascript
 for await (const event of window.agent.run({
   task: 'Search for recent news about AI',
   maxToolCalls: 5,
 })) {
-  if (event.type === 'token') {
-    console.log(event.token);
-  }
+  if (event.type === 'thinking')    console.log('thinking:', event.content);
+  if (event.type === 'tool_call')   console.log('calling:', event.tool, event.args);
+  if (event.type === 'tool_result') console.log('result:', event.tool, event.result);
+  if (event.type === 'final')       console.log('answer:', event.output);
 }
+```
+
+### Streaming Text
+
+`session.promptStreaming()` yields **plain string chunks** (Chrome Prompt API compatible):
+
+```javascript
+const session = await window.ai.createTextSession();
+for await (const chunk of session.promptStreaming('Tell me a story')) {
+  process.stdout.write(chunk);
+}
+session.destroy();
 ```
 
 ### Read Active Tab
 
 ```javascript
 const tab = await window.agent.browser.activeTab.readability();
-console.log(tab.title, tab.text);
+console.log(tab.title, tab.textContent);
 ```
 
 ## Troubleshooting

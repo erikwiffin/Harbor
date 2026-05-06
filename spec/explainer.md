@@ -1,9 +1,51 @@
 # Web Agent API Explainer
 
-**Status**: Draft Proposal  
-**Author**: Raffi Krikorian  
-**Last Updated**: January 2026  
+**Status**: Draft Proposal
+**Author**: Raffi Krikorian
+**Last Updated**: May 2026
 **Version**: 1.4
+
+---
+
+## Implementation Status (May 2026)
+
+This document is the **proposed** Web Agent API. The Harbor reference implementation
+(`web-agents-api/src/injected.ts`, API version `1.4.0`) ships a subset. Use the
+synchronous `window.agent.capabilities()` call to feature-detect at runtime.
+
+**Shipped today** (gated by per-feature flags in the Web Agents API sidebar):
+
+- `window.ai` — `createTextSession`, `prompt`, `promptStreaming` (yields plain
+  string chunks), `languageModel.capabilities()`, `providers.list/getActive/
+  listConfiguredModels`.
+- `window.agent.requestPermissions`, `permissions.list`, `capabilities()`.
+- `window.agent.tools.list/call` (also covers page tools registered via
+  `navigator.modelContext.addTool`).
+- `window.agent.run({ task, maxToolCalls?, systemPrompt? })` (autonomous loop;
+  events: `thinking | tool_call | tool_result | final | error`).
+- `window.agent.browser.activeTab.{readability, getElements, click, fill, select,
+  scroll, screenshot}`.
+- `window.agent.browser.{navigate, fetch}` (active tab) and `tabs.{create,
+  list, close}` / `tab.{readability, getHtml, waitForLoad}` for owned tabs.
+- `window.agent.sessions.{create, get, list, terminate}` with explicit
+  capability bounds and budgets.
+- `window.agent.mcp.{discover, register, unregister}`,
+  `window.agent.chat.{canOpen, open, close}`.
+- `window.agent.agents.*` — register/unregister, discover, invoke, send,
+  subscribe/broadcast, orchestrate (`pipeline` / `parallel` / `route`).
+- `navigator.modelContext.addTool` (WebMCP polyfill).
+
+**Proposed but NOT yet in the reference implementation** (treated as future
+work — sections below are kept so the spec reflects the full design intent):
+
+- `window.ai.runtime.*` (Firefox-ML / Chrome-AI / Harbor runtime selection).
+- `window.agent.addressBar.*` and `window.agent.commandBar.*`.
+- A privileged "extension-driver" trust tier that lets one tab observe or
+  drive arbitrary other tabs (today only same-origin and "owned/spawned"
+  tabs are addressable). See `docs/AGENTIC_BROWSER_ROADMAP.md`.
+
+If you are writing code today, prefer `docs/LLMS.txt` and
+`docs/WEB_AGENTS_API.md` — they describe only what is actually exposed.
 
 ---
 
@@ -778,6 +820,11 @@ console.log(`Active model: ${active.model}`);
 
 #### `ai.runtime`
 
+> **Status: Proposed, not yet shipped.** The Harbor reference implementation
+> does not currently expose `window.ai.runtime`. Use
+> `window.ai.providers.list()` / `getActive()` and pass `provider`/`model` to
+> `createTextSession()` to pick a backend explicitly.
+
 The `ai.runtime` namespace provides direct access to specific AI backends (Firefox ML, Chrome's built-in AI, or Harbor's bridge). This is useful when you want to explicitly choose which runtime to use.
 
 **Properties:**
@@ -873,11 +920,36 @@ The `window.agent` object provides access to MCP tools, browser APIs, and autono
 
 #### `agent.capabilities()`
 
-Get a comprehensive report of all available capabilities, permissions, and features. This is the recommended way to discover what the agent can do before making API calls.
+Get a report of available capabilities, permissions, and features. This is the recommended way to discover what the agent can do before making API calls.
 
-**Signature:**
+> **Implementation note:** The Harbor reference implementation ships a
+> **synchronous** `agent.capabilities()` that returns the API version, the
+> currently-enabled feature flags, the surfaces those flags expose, and the
+> full list of permission scopes. The richer async variant below (with live
+> provider/tool/agent introspection) is proposed; pages that need
+> per-provider/per-tool detail should call `ai.providers.list()` and
+> `agent.tools.list()` after requesting the matching scopes.
+
+**Signature (proposed, async):**
 ```typescript
 agent.capabilities(): Promise<AgentCapabilitiesReport>
+```
+
+**Signature (currently shipped, synchronous):**
+```typescript
+agent.capabilities(): {
+  apiVersion: string;
+  features: {
+    textGeneration: boolean; toolCalling: boolean; toolAccess: boolean;
+    browserInteraction: boolean; browserControl: boolean; multiAgent: boolean;
+  };
+  surfaces: {
+    ai: boolean; tools: boolean; run: boolean;
+    browser: { activeTab: boolean; tabs: boolean; navigate: boolean; fetch: boolean };
+    mcp: boolean; chat: boolean; sessions: boolean; agents: boolean; modelContext: boolean;
+  };
+  scopes: PermissionScope[];
+};
 ```
 
 **Returns:**
@@ -2657,11 +2729,11 @@ console.log(caps.permissions.llm.prompt); // 'granted-always'
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.4 | January 2026 | Unified capabilities API (`agent.capabilities()`), browser interaction APIs documentation |
-| 1.3 | January 2026 | Native browser AI providers (Firefox ML, Chrome AI), split routing, `ai.runtime.*` |
-| 1.2 | January 2026 | Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`) |
-| 1.1 | January 2026 | Added BYOC extension (`agent.mcp.*`, `agent.chat.*`) |
-| 1.0 | January 2026 | Initial specification |
+| 1.4 | May 2026 | Synchronous `agent.capabilities()` shipped; `agent.browser.navigate` and `agent.browser.fetch` wired up; permission scope set reconciled with implementation; debug logging gated behind `web-agents-api:debug`. |
+| 1.3 | January 2026 | Native browser AI providers (Firefox ML, Chrome AI), split routing, `ai.runtime.*` (proposed, not yet shipped). |
+| 1.2 | January 2026 | Address Bar API (`agent.addressBar.*`, `agent.commandBar.*`) (proposed, not yet shipped). |
+| 1.1 | January 2026 | Added BYOC extension (`agent.mcp.*`, `agent.chat.*`). |
+| 1.0 | January 2026 | Initial specification. |
 
 ---
 
