@@ -385,19 +385,26 @@ gain authority you didn't have.
 
 #### agent.upgradeSession(sessionId, options)
 
-Change a session's mode after creation. The mode lattice
-(`plan ⊑ watch ⊑ execute`) only allows narrowing; widening calls
-return `false` and leave the session unchanged.
+Change a session's mode after creation. Capability tokens are
+one-way: this method can **narrow** a session (Execute → Watch →
+Plan) but cannot widen it. Widening calls return `false` and leave
+the session unchanged.
 
 ```javascript
-// Pattern 1: start in Plan, narrow into Watch when the user clicks
-// "Run" so each write is previewed:
-await window.agent.upgradeSession(session.id, { mode: 'watch' });
-
-// Pattern 2: drop a long-running session back to Plan when the user
-// idles or wants to review.
+// Drop a long-running session back to Plan when the user idles or
+// wants to review.
 await window.agent.upgradeSession(session.id, { mode: 'plan' });
+
+// Or narrow into Watch so each write previews before running.
+await window.agent.upgradeSession(session.id, { mode: 'watch' });
 ```
+
+To **widen** a session — e.g. to grant write authority after the
+user clicks "Apply" — call `agent.requestCapabilities()` again with
+the additional actions and a `reason`. The user gets a fresh prompt
+scoped to exactly the new authority, and the new session carries its
+own capability token; the original session continues with its
+narrower scope.
 
 For the full mode semantics, see
 [`docs/PERMISSIONS.md`](./PERMISSIONS.md).

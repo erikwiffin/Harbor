@@ -238,7 +238,7 @@
           <td>implicit, trust the vendor</td>
           <td>per-feature toggle</td>
           <td>page-level, opaque</td>
-          <td class="col-harbor"><strong>per-origin, per-tool</strong> — like the camera</td>
+          <td class="col-harbor"><strong>typed actions + capability tokens</strong>, per-origin, with mode (plan/execute/watch) and an audit feed</td>
         </tr>
         <tr>
           <th>Where context lives</th>
@@ -333,7 +333,7 @@
           <dt>Whose model</dt><dd>user's choice — local, hosted, self-run</dd>
           <dt>Whose browser</dt><dd>any — Firefox + Chrome today</dd>
           <dt>How agents act</dt><dd>page tools + remote MCP, user-scoped</dd>
-          <dt>Permissions</dt><dd>per-origin, per-tool — like the camera</dd>
+          <dt>Permissions</dt><dd>typed actions + capability tokens, per-origin, with audit feed</dd>
           <dt>Context lives</dt><dd>your machine, surfaced by the browser</dd>
           <dt>Threat surface</dt><dd>scoped tools — by design, smaller</dd>
           <dt>Cross-site memory</dt><dd>user-stitched via your MCP servers</dd>
@@ -533,6 +533,7 @@
           <li>cookies, storage, and credentials of other origins</li>
           <li>tools the user did not approve for this origin</li>
           <li>cross-origin context smuggled in by prompt injection — tools are typed and scoped</li>
+          <li>data with sensitive labels (<code>credentials</code>, <code>payments</code>, <code>identity</code>) — the engine refuses to forward labeled data into actions whose <code>acceptsLabels</code> excludes that label, no matter how generous the user's policy is</li>
         </ul>
       </div>
       <div>
@@ -541,10 +542,22 @@
           <li>which model the page may talk to, and at what cost ceiling</li>
           <li>which tools — page-declared and remote MCP — are visible</li>
           <li>which context (history, bookmarks, files) is permitted</li>
-          <li>a visible audit trail of every tool call, with revoke</li>
+          <li>session <strong>mode</strong>: <code>plan</code> (read-only), <code>execute</code> (act), <code>watch</code> (preview every write) — narrowable at any time, never widenable without re-grant</li>
+          <li>a visible audit trail of every engine decision, with one-click revoke and a "Why?" / "What if?" simulator</li>
         </ul>
       </div>
     </div>
+
+    <p style="margin-top: 24px; color: var(--ink-mute); font-size: var(--t-small);">
+      All of this is the surface of a single chokepoint — the
+      <strong>PolicyEngine</strong> — that walks a 9-tier ladder
+      (Ambient → Managed Deny → Sensitivity Gate → Information-Flow
+      Check → Watchdog → Capability Token → Policy Allow → Policy
+      Ask → Per-Origin Grant → Default-for-Effect) on every API call.
+      Tiers 1–5 are a safety floor a user policy can't override. The
+      full design lives in
+      <a class="link" href="https://github.com/r/harbor/blob/main/docs/PERMISSIONS.md" target="_blank" rel="noopener">docs/PERMISSIONS.md ↗</a>.
+    </p>
 
     <p style="margin-top: 28px; color: var(--ink-mute); font-family: var(--font-mono); font-size: var(--t-small);">
       We use words like <em>by design</em> and <em>smaller surface</em>. We don't say <em>safe</em>.

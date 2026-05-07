@@ -131,14 +131,14 @@ document.getElementById("ask").onclick = async () =&gt; {
     </p>
     <pre class="ex-code" style="white-space: pre">const session = await agent.requestCapabilities({
   name: "Research assistant",
+  reason: "Research assistant needs search and memory.",
   mode: "plan",
   require: [
     { action: "model.prompt.local" },
-    { action: "tool.list" },
-    { action: "tool.call" },
+    { action: "tool.call", server: "brave-search", toolNames: ["search"] },
+    { action: "tool.call", server: "memory", toolNames: ["save"] },
   ],
-  tools:  ["brave-search/search", "memory/save"],
-  reason: "Research assistant needs search.",
+  budget: { maxToolCalls: 30, ttlMinutes: 15 },
 });
 
 for await (const ev of agent.run({
@@ -151,11 +151,14 @@ for await (const ev of agent.run({
   if (ev.type === "final")     console.log(ev.output);
 }
 
-// Later, when the user clicks "Apply suggested edit":
-await agent.upgradeSession(session.id, {
-  mode: "execute",
-  add: [{ action: "browser.write.interact" }],
-  reason: "Apply the changes you approved",
+// Capability tokens are one-way: upgradeSession can narrow but not
+// widen. To gain write authority later, mint a fresh session with a
+// scoped, reason-tagged prompt the user can grant in one click:
+const writeSession = await agent.requestCapabilities({
+  name:    "Apply suggested edit",
+  reason:  "Apply the changes you approved",
+  mode:    "execute",
+  require: [{ action: "browser.write.interact" }],
 });</pre>
 
     <h2 id="page-tools">4. Expose your own tools (W3C WebMCP)</h2>

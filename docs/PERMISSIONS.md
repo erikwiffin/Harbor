@@ -476,12 +476,14 @@ If your task can be done with a local model, ask for `model.prompt.local` only. 
 
 Some scope combinations are common enough that the prompt batches them as a single decision (e.g. `model:prompt + browser:activeTab.read + browser:activeTab.screenshot` is a "Reader assistant" preset). Asking for them together — instead of one at a time as you discover you need them — gets the user to a single decision faster.
 
-### 3. Default to Plan mode; escalate after a user gesture
+### 3. Default to Plan mode; mint fresh authority after a user gesture
 
 Create your sessions in Plan mode and only request Execute (or specific write actions) when the user explicitly takes an action that requires writes. This is the same shape Cursor and Claude Code use, and it gives the user a natural moment to grant write authority.
 
+Capability tokens are intentionally one-way: `agent.upgradeSession()` can **narrow** a session (Execute → Watch → Plan) but cannot widen it. To widen, you mint a fresh capability token by calling `agent.requestCapabilities()` again. The user gets a new prompt that names the additional authority — that's the "natural moment" for a re-grant, and it keeps the audit log honest about which token was acting when.
+
 ```ts
-const session = await agent.requestCapabilities({
+const planSession = await agent.requestCapabilities({
   name: 'Article assistant',
   mode: 'plan',
   require: [
@@ -491,17 +493,20 @@ const session = await agent.requestCapabilities({
   ],
 });
 
-// Later, when the user clicks "Apply suggested edit"
-await agent.upgradeSession(session.id, {
+// Later, when the user clicks "Apply suggested edit", request a new
+// session with write authority. The user sees a fresh prompt scoped
+// to exactly the new actions.
+const writeSession = await agent.requestCapabilities({
+  name: 'Apply suggested edit',
   mode: 'execute',
-  add: [
+  require: [
     { action: 'browser.write.interact' },
   ],
   reason: 'Apply the changes you approved',
 });
 ```
 
-The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. Upgrading mints a new capability token; old code paths holding the old token will fail closed.
+The user gets two prompts, but each is small and scoped to a real moment of intent. That's much cheaper to grant than one giant upfront prompt. The two sessions hold separate capability tokens; the original Plan session keeps working for further reads, and the new Execute session covers the write you just authorized. When the write is done, terminate it.
 
 ### 4. Annotate destructive tools in your MCP manifests, but don't expect them to be trusted
 
