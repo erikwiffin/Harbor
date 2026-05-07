@@ -1374,6 +1374,153 @@ browserAPI.runtime.onMessage.addListener((message) => {
 loadPermissions();
 
 // =============================================================================
+// Activity Panel (audit log feed)
+// =============================================================================
+
+const activityList = document.getElementById('activity-list') as HTMLDivElement | null;
+const activitySummary = document.getElementById('activity-summary') as HTMLDivElement | null;
+const activityBody = document.getElementById('activity-body') as HTMLDivElement | null;
+const activityPanelHeader = document.getElementById('activity-panel-header') as HTMLDivElement | null;
+const activityPanelToggle = document.getElementById('activity-panel-toggle') as HTMLSpanElement | null;
+const refreshActivityBtn = document.getElementById('refresh-activity-btn') as HTMLButtonElement | null;
+const activityFilterEffect = document.getElementById('activity-filter-effect') as HTMLSelectElement | null;
+
+if (activityPanelHeader && activityPanelToggle && activityBody) {
+  setupPanelToggle(activityPanelHeader, activityPanelToggle, activityBody);
+}
+
+type AuditRecordView = {
+  id: string;
+  timestamp: number;
+  origin: string;
+  action: string;
+  effect: 'allow' | 'ask' | 'preview' | 'deny' | 'attenuate';
+  tier: number;
+  source: string;
+  rule?: { id: string };
+  reason: string;
+  errorCode?: string;
+  labelsIn: string[];
+  labelsOut: string[];
+};
+
+type AuditSummary = {
+  totalDecisions: number;
+  byEffect: Record<string, number>;
+  byOrigin: Record<string, number>;
+  labelEgressDenials: number;
+  quarantines: number;
+};
+
+function fmtTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString();
+}
+
+function effectBadge(effect: string): string {
+  const colorMap: Record<string, string> = {
+    allow: '#16a34a',
+    ask: '#ca8a04',
+    preview: '#0891b2',
+    deny: '#dc2626',
+    attenuate: '#7c3aed',
+  };
+  const c = colorMap[effect] ?? '#6b7280';
+  return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
+}
+
+async function loadActivity(): Promise<void> {
+  if (!activityList || !activitySummary) return;
+  const filterEffect = activityFilterEffect?.value || undefined;
+  try {
+    const [recordsResp, summaryResp] = await Promise.all([
+      browserAPI.runtime.sendMessage({
+        type: 'audit.query',
+        filters: {
+          effect: filterEffect,
+          // Show roughly the last 200 records — a typical session generates
+          // dozens; this gives the user enough scrollback without bloating
+          // the DOM.
+          limit: 200,
+        },
+      }) as Promise<{ ok?: boolean; records?: AuditRecordView[]; error?: string }>,
+      browserAPI.runtime.sendMessage({ type: 'audit.summarize' }) as Promise<{
+        ok?: boolean;
+        summary?: AuditSummary;
+      }>,
+    ]);
+
+    if (summaryResp?.ok && summaryResp.summary) {
+      const s = summaryResp.summary;
+      const parts: string[] = [`${s.totalDecisions} decisions`];
+      if (s.byEffect.allow) parts.push(`${s.byEffect.allow} allowed`);
+      if (s.byEffect.deny) parts.push(`${s.byEffect.deny} denied`);
+      if (s.byEffect.ask) parts.push(`${s.byEffect.ask} prompted`);
+      if (s.labelEgressDenials) parts.push(`${s.labelEgressDenials} label-flow blocks`);
+      if (s.quarantines) parts.push(`${s.quarantines} quarantines`);
+      activitySummary.textContent = parts.join(' · ');
+    } else {
+      activitySummary.textContent = '—';
+    }
+
+    if (!recordsResp?.ok || !recordsResp.records) {
+      activityList.innerHTML = '<div class="empty-state">No activity yet.</div>';
+      return;
+    }
+    if (recordsResp.records.length === 0) {
+      activityList.innerHTML = '<div class="empty-state">No activity yet.</div>';
+      return;
+    }
+    // Render newest first.
+    const rows = recordsResp.records.slice().reverse().map((r) => {
+      const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">⛳ ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
+      const tier = `<span style="font-size:10px;color:var(--color-text-muted);">tier ${r.tier}</span>`;
+      const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
+      return `
+        <div data-record-id="${escapeHtml(r.id)}" style="padding:6px 0;border-bottom:1px solid var(--color-border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
+              ${effectBadge(r.effect)}
+              <code style="font-size:11px;font-weight:600;flex-shrink:0;">${escapeHtml(r.action)}</code>
+              <span style="font-size:11px;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.origin)}</span>
+            </div>
+            <span style="font-size:10px;color:var(--color-text-muted);flex-shrink:0;">${fmtTime(r.timestamp)}</span>
+          </div>
+          <div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.reason)} · ${tier}${rule}${labels}</div>
+        </div>`;
+    }).join('');
+    activityList.innerHTML = rows;
+  } catch (err) {
+    console.error('[Sidebar] Failed to load activity:', err);
+    activityList.innerHTML = '<div class="empty-state">Failed to load activity.</div>';
+  }
+}
+
+if (refreshActivityBtn) {
+  refreshActivityBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    loadActivity();
+  });
+}
+if (activityFilterEffect) {
+  activityFilterEffect.addEventListener('click', (e) => e.stopPropagation());
+  activityFilterEffect.addEventListener('change', (e) => {
+    e.stopPropagation();
+    loadActivity();
+  });
+}
+
+// Refresh the feed every 5 seconds while the panel is visible.
+setInterval(() => {
+  const body = document.getElementById('activity-body');
+  if (body && !body.classList.contains('collapsed')) {
+    loadActivity();
+  }
+}, 5_000);
+
+loadActivity();
+
+// =============================================================================
 // OAuth App Credentials Panel
 // =============================================================================
 

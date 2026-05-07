@@ -1232,6 +1232,32 @@
       </div>
     </div>
 
+    <!-- Policy Activity Panel -->
+    <div class="panel" id="activity-panel">
+      <div class="panel-header" id="activity-panel-header">
+        <div class="panel-header-left">
+          <span class="panel-collapse-icon" id="activity-panel-toggle">&#9660;</span>
+          <div class="panel-title">📜 Activity</div>
+        </div>
+        <div class="panel-header-right">
+          <select class="form-input form-input-sm" id="activity-filter-effect" title="Filter by outcome" style="height: 24px; font-size: var(--text-xs); padding: 0 var(--space-2);">
+            <option value="">All</option>
+            <option value="allow">Allowed</option>
+            <option value="ask">Prompted</option>
+            <option value="preview">Previewed</option>
+            <option value="deny">Denied</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="refresh-activity-btn" title="Refresh">↻</button>
+        </div>
+      </div>
+      <div class="panel-body" id="activity-body">
+        <div id="activity-summary" style="font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2);">Loading…</div>
+        <div id="activity-list">
+          <div class="empty-state">No activity yet.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Site Permissions Panel -->
     <div class="panel" id="permissions-panel">
       <div class="panel-header" id="permissions-panel-header">

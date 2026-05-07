@@ -14,6 +14,7 @@ import { registerPermissionHandlers } from './permission-handlers';
 import { registerSessionHandlers } from './session-handlers';
 import { registerRemoteServerHandlers } from './remote-server-handlers';
 import { registerPageChatHandlers } from './page-chat-handlers';
+import { registerAuditHandlers } from './audit-handlers';
 
 /**
  * Initialize all message handlers.
@@ -28,7 +29,8 @@ export function initializeHandlers(): void {
   registerSessionHandlers();
   registerRemoteServerHandlers();
   registerPageChatHandlers();
-  
+  registerAuditHandlers();
+
   console.log('[Harbor] All message handlers registered');
 }
 
@@ -42,4 +44,5 @@ export {
   registerSessionHandlers,
   registerRemoteServerHandlers,
   registerPageChatHandlers,
+  registerAuditHandlers,
 };
