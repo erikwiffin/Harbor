@@ -22,6 +22,7 @@ import type { LabelSet } from '../../policy/labels';
 import type { SessionMode } from '../../policy/tokens';
 import { showPermissionPrompt } from '../../policy/permissions';
 import { grantPermissions } from '../../policy/permissions';
+import { Audit } from '../../policy/audit';
 
 const DEBUG = false;
 
@@ -71,7 +72,7 @@ export async function requireAction(
 ): Promise<boolean> {
   log('requireAction', { origin: ctx.origin, action, options });
 
-  const decision = await evaluate({
+  const request = {
     origin: ctx.origin,
     action,
     resource: options.resource,
@@ -80,7 +81,11 @@ export async function requireAction(
     mode: options.mode,
     reason: options.reason,
     correlationId: ctx.id,
-  });
+  };
+  const decision = await evaluate(request);
+  // Every gated decision lands in the audit log. The activity feed,
+  // watchdog, and decision simulator all read from here.
+  Audit.record(request, decision);
 
   log('requireAction decision', decision);
 
