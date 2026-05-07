@@ -243,6 +243,14 @@ export interface SessionSummary {
   type: SessionType;
   origin: string;
   status: SessionStatus;
+  /**
+   * Capability-token authority profile. Drives the sidebar mode picker
+   * (`plan` / `execute` / `watch`) and tells policy consumers which
+   * defaults apply when a request from this session is evaluated.
+   */
+  mode: SessionMode;
+  /** Capability token id, if one is bound to this session. */
+  tokenId?: string;
   name?: string;
   createdAt: number;
   lastActiveAt: number;

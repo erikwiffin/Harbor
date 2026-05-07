@@ -646,6 +646,8 @@ class SessionRegistryImpl {
       type: session.type,
       origin: session.origin,
       status: session.status,
+      mode: session.mode,
+      tokenId: session.tokenId,
       name: session.name,
       createdAt: session.createdAt,
       lastActiveAt: session.lastActiveAt,

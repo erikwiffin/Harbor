@@ -2103,6 +2103,8 @@ type SessionSummary = {
   type: 'implicit' | 'explicit';
   origin: string;
   status: 'active' | 'suspended' | 'terminated';
+  mode: 'plan' | 'execute' | 'watch';
+  tokenId?: string;
   name?: string;
   createdAt: number;
   lastActiveAt: number;
@@ -2115,6 +2117,24 @@ type SessionSummary = {
     promptCount: number;
     toolCallCount: number;
   };
+};
+
+const SESSION_MODE_BADGES: Record<'plan' | 'execute' | 'watch', { color: string; label: string; tip: string }> = {
+  plan: {
+    color: '#16a34a',
+    label: 'Plan',
+    tip: 'Read-only. Reasoning and analysis only — no tool calls, no writes.',
+  },
+  execute: {
+    color: '#ca8a04',
+    label: 'Execute',
+    tip: 'Allowed to call tools and write to the page within budget.',
+  },
+  watch: {
+    color: '#dc2626',
+    label: 'Watch',
+    tip: 'Step-through. Every action confirmed individually.',
+  },
 };
 
 const sessionsPanelHeader = document.getElementById('sessions-panel-header') as HTMLDivElement;
@@ -2200,12 +2220,25 @@ function renderSessions(sessions: SessionSummary[]): void {
       ? session.origin.slice(0, 37) + '...' 
       : session.origin;
 
+    const mode = session.mode || 'execute';
+    const modeBadge = SESSION_MODE_BADGES[mode];
+    // Available targets: only equal-or-narrower modes (no widening).
+    // The lattice is plan ⊑ watch ⊑ execute (intuitively: plan reads,
+    // watch confirms each step, execute runs freely). The registry
+    // enforces this; the UI just hides options that would 400.
+    const modeOptions: Array<'plan' | 'execute' | 'watch'> = (() => {
+      if (mode === 'execute') return ['execute', 'watch', 'plan'];
+      if (mode === 'watch') return ['watch', 'plan'];
+      return ['plan'];
+    })();
+
     return `
       <div class="session-item ${typeClass} ${statusClass}" data-session-id="${session.sessionId}">
         <div class="session-header">
           <div class="session-name">
             ${escapeHtml(displayName)}
             <span class="session-type-badge ${typeClass}">${session.type}</span>
+            <span class="session-mode-badge" title="${escapeHtml(modeBadge.tip)}" style="background:${modeBadge.color};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;margin-left:4px;">${modeBadge.label}</span>
           </div>
           <span class="session-time">${formatRelativeTime(session.lastActiveAt)}</span>
         </div>
@@ -2218,7 +2251,11 @@ function renderSessions(sessions: SessionSummary[]): void {
           <span class="session-stat">⚡ ${session.usage.toolCallCount} tool calls</span>
         </div>
         ${session.status === 'active' ? `
-          <div class="session-actions">
+          <div class="session-actions" style="display:flex;gap:6px;align-items:center;">
+            <label style="font-size:var(--text-xs);color:var(--color-text-muted);">Mode:</label>
+            <select class="form-input form-input-sm session-mode-select" data-session-id="${session.sessionId}" style="height:24px;font-size:var(--text-xs);padding:0 var(--space-2);" ${modeOptions.length <= 1 ? 'disabled' : ''}>
+              ${modeOptions.map((m) => `<option value="${m}" ${m === mode ? 'selected' : ''}>${SESSION_MODE_BADGES[m].label}</option>`).join('')}
+            </select>
             <button class="btn btn-sm btn-danger terminate-session-btn" data-session-id="${session.sessionId}" data-origin="${escapeHtml(session.origin)}">Terminate</button>
           </div>
         ` : `
@@ -2229,6 +2266,38 @@ function renderSessions(sessions: SessionSummary[]): void {
       </div>
     `;
   }).join('');
+
+  // Mode picker on each active session row. The registry refuses any
+  // request that widens authority (plan → execute, watch → execute,
+  // plan → watch) — the UI just narrows the visible choices to what
+  // succeeds, and shows a toast on the rare case it doesn't.
+  sessionsList.querySelectorAll('.session-mode-select').forEach((sel) => {
+    const select = sel as HTMLSelectElement;
+    select.addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const sessionId = select.dataset.sessionId!;
+      const newMode = select.value as 'plan' | 'execute' | 'watch';
+      select.disabled = true;
+      try {
+        const resp = await browserAPI.runtime.sendMessage({
+          type: 'session.setMode',
+          sessionId,
+          mode: newMode,
+        }) as { ok?: boolean; upgraded?: boolean; error?: string };
+        if (!resp?.ok) {
+          showToast(`Mode change failed: ${resp?.error ?? 'unknown'}`, 'error');
+        } else if (resp.upgraded === false) {
+          showToast('Mode change refused (would widen authority).', 'error');
+        } else {
+          showToast(`Session is now in ${newMode} mode`);
+        }
+      } catch (err) {
+        console.error('[Sidebar] Failed to set mode:', err);
+        showToast('Failed to change mode', 'error');
+      }
+      await loadSessions();
+    });
+  });
 
   // Add event listeners for terminate buttons
   sessionsList.querySelectorAll('.terminate-session-btn').forEach((btn) => {
