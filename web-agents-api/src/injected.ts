@@ -1636,7 +1636,105 @@ const agentApi = Object.freeze({
       const result = await sendRequest<{ terminated: boolean }>('agent.sessions.terminate', { sessionId });
       return result.terminated;
     },
+
+    /**
+     * Upgrade an existing session's mode. The Harbor extension re-mints the
+     * session's capability token; cannot widen authority — request a new
+     * session if you need a more permissive mode.
+     *
+     * @example
+     * // After the user clicks "Apply suggested edit":
+     * const ok = await agent.sessions.upgrade(session.id, 'execute');
+     * if (!ok) console.warn('User declined the upgrade');
+     */
+    async upgrade(sessionId: string, mode: 'plan' | 'execute' | 'watch'): Promise<boolean> {
+      const result = await sendRequest<{ upgraded: boolean }>('agent.sessions.upgrade', { sessionId, mode });
+      return result.upgraded;
+    },
   }),
+
+  /**
+   * Convenience: change the mode of an existing session. Equivalent to
+   * `agent.sessions.upgrade(sessionId, mode)` but matches the prose in
+   * `docs/PERMISSIONS.md` and the website's plan→execute pattern.
+   */
+  async upgradeSession(sessionId: string, options: { mode: 'plan' | 'execute' | 'watch' }): Promise<boolean> {
+    const result = await sendRequest<{ upgraded: boolean }>('agent.upgradeSession', {
+      sessionId,
+      mode: options.mode,
+    });
+    return result.upgraded;
+  },
+
+  /**
+   * Request capabilities in the typed-action vocabulary. This is the
+   * canonical session-creation API documented in `docs/PERMISSIONS.md`;
+   * it translates a flat list of typed-action requests into the legacy
+   * capability shape that `agent.sessions.create` understands and returns
+   * the resulting `AgentSession`.
+   *
+   * @example
+   * const session = await agent.requestCapabilities({
+   *   name: 'Article assistant',
+   *   mode: 'plan',
+   *   require: [
+   *     { action: 'model.prompt.local' },
+   *     { action: 'browser.read.activeTab' },
+   *   ],
+   *   reason: 'Read the page and propose edits.',
+   * });
+   */
+  async requestCapabilities(opts: {
+    name?: string;
+    reason?: string;
+    mode?: 'plan' | 'execute' | 'watch';
+    require: Array<{ action: string; server?: string; toolNames?: string[] }>;
+    optional?: Array<{ action: string; server?: string; toolNames?: string[] }>;
+    budget?: { maxToolCalls?: number; ttlMinutes?: number };
+  }): Promise<AgentSession> {
+    const all = [...opts.require, ...(opts.optional ?? [])];
+
+    const wantsLLM = all.some((r) => r.action.startsWith('model.prompt'));
+    const tools: string[] = [];
+    for (const r of all) {
+      if (r.action === 'tool.call' && r.server && r.toolNames?.length) {
+        for (const tn of r.toolNames) tools.push(`${r.server}/${tn}`);
+      } else if (r.action === 'tool.call' && r.server) {
+        // Server-only request: leave as a wildcard. Backend allowlist
+        // narrows further; the engine then gates by per-tool rules.
+        tools.push(`${r.server}/*`);
+      }
+    }
+    const browser: ('read' | 'interact' | 'screenshot')[] = [];
+    if (all.some((r) => r.action.startsWith('browser.read.'))) browser.push('read');
+    if (all.some((r) => r.action.startsWith('browser.write.'))) browser.push('interact');
+    if (all.some((r) => r.action === 'browser.read.screenshot')) browser.push('screenshot');
+
+    const createOptions: CreateSessionOptions = {
+      name: opts.name,
+      reason: opts.reason,
+      mode: opts.mode,
+      capabilities: {
+        ...(wantsLLM ? { llm: {} } : {}),
+        tools,
+        browser,
+      },
+      limits: opts.budget
+        ? {
+            maxToolCalls: opts.budget.maxToolCalls,
+            ttlMinutes: opts.budget.ttlMinutes,
+          }
+        : undefined,
+    };
+
+    const result = await sendRequest<CreateSessionResult>('agent.sessions.create', createOptions);
+    if (!result.success || !result.sessionId || !result.capabilities) {
+      const err = new Error(result.error?.message || 'requestCapabilities failed');
+      (err as Error & { code?: string }).code = result.error?.code || 'ERR_PERMISSION_DENIED';
+      throw err;
+    }
+    return createAgentSessionObject(result.sessionId, result.capabilities);
+  },
 
   // Multi-agent API (Extension 3) — re-reads feature flags at call time so toggling in the sidebar takes effect without refresh.
   agents: (() => {
