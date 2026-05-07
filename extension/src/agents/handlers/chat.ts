@@ -3,9 +3,8 @@
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { log } from './helpers';
+import { log, requireAction } from './helpers';
 import { browserAPI } from '../../browser-compat';
-import { checkPermissions } from '../../policy/permissions';
 
 // =============================================================================
 // State Management
@@ -70,17 +69,10 @@ export async function handleChatOpen(
     };
   } | undefined;
 
-  // Check permission
-  const hasPermission = await checkPermissions(ctx.origin, ['chat:open']);
-  if (!hasPermission) {
-    sender.sendResponse({
-      id: ctx.id,
-      ok: false,
-      error: {
-        code: 'ERR_PERMISSION_DENIED',
-        message: 'Permission "chat:open" is required. Call agent.requestPermissions() first.',
-      },
-    });
+  if (!(await requireAction(ctx, sender, 'chat.open', {
+    promptAsScope: 'chat:open',
+    reason: 'Open the chat surface on this page',
+  }))) {
     return;
   }
 

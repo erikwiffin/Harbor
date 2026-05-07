@@ -16,6 +16,9 @@ import { listAllProviders, getRuntimeCapabilities } from './llm/provider-registr
 import { SessionRegistry } from './sessions';
 import type { CreateSessionOptions, SessionSummary } from './sessions';
 import { routeExternalMessage } from './agents/background-router';
+import { Audit } from './policy/audit';
+import { simulate, replay } from './policy/simulator';
+import { Watchdog } from './policy/watchdog';
 
 // =============================================================================
 // Types
@@ -70,6 +73,14 @@ type MessageType =
   | 'session.terminate'
   | 'session.upgrade'
   | 'session.recordUsage'
+  // Policy / audit
+  | 'audit.query'
+  | 'audit.summarize'
+  | 'audit.clear'
+  | 'policy.simulate'
+  | 'policy.replay'
+  | 'watchdog.snapshot'
+  | 'watchdog.resetOrigin'
   // System
   | 'system.health'
   | 'system.getCapabilities'
@@ -713,6 +724,22 @@ export async function routeExtensionApiMessage(
     case 'session.recordUsage':
       return handleSessionRecordUsage(payload);
 
+    // Policy / audit
+    case 'audit.query':
+      return handleAuditQuery(payload);
+    case 'audit.summarize':
+      return handleAuditSummarize(payload);
+    case 'audit.clear':
+      return handleAuditClear();
+    case 'policy.simulate':
+      return handlePolicySimulate(payload);
+    case 'policy.replay':
+      return handlePolicyReplay(payload);
+    case 'watchdog.snapshot':
+      return handleWatchdogSnapshot(payload);
+    case 'watchdog.resetOrigin':
+      return handleWatchdogResetOrigin(payload);
+
     // System
     case 'system.health':
       return handleSystemHealth();
@@ -725,6 +752,120 @@ export async function routeExtensionApiMessage(
 
     default:
       return failure(`Unknown message type: ${type}`);
+  }
+}
+
+// =============================================================================
+// Policy / audit handlers
+// =============================================================================
+
+/**
+ * Read recent audit records. Filters mirror Audit.query's signature so a
+ * sidebar caller can ask for "everything from this origin in the last
+ * minute" or "every label-egress denial."
+ */
+async function handleAuditQuery(payload: unknown): Promise<ExtensionApiResponse> {
+  const filters = (payload || {}) as {
+    origin?: string;
+    sinceMs?: number;
+    until?: number;
+    label?: string;
+    limit?: number;
+  };
+  try {
+    const records = Audit.query({
+      origin: filters.origin,
+      sinceMs: filters.sinceMs,
+      until: filters.until,
+      label: filters.label,
+      limit: filters.limit,
+    });
+    return success({ records });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+async function handleAuditSummarize(payload: unknown): Promise<ExtensionApiResponse> {
+  const { sinceMs } = (payload || {}) as { sinceMs?: number };
+  try {
+    return success(Audit.summarize({ sinceMs }));
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+async function handleAuditClear(): Promise<ExtensionApiResponse> {
+  try {
+    Audit.clear();
+    return success({ cleared: true });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/**
+ * Run a hypothetical request through the engine without side effects.
+ * The sidebar's "What if?" affordance uses this to preview what would
+ * happen if the user changed a rule or turned off a feature flag.
+ */
+async function handlePolicySimulate(payload: unknown): Promise<ExtensionApiResponse> {
+  const input = (payload || {}) as Parameters<typeof simulate>[0];
+  try {
+    const result = await simulate(input);
+    return success(result);
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/**
+ * Replay an audit record under modified context. Powers the "Why?"
+ * deep-link in the activity feed.
+ */
+async function handlePolicyReplay(payload: unknown): Promise<ExtensionApiResponse> {
+  const { recordId, modifications } = (payload || {}) as {
+    recordId?: string;
+    modifications?: Parameters<typeof replay>[1];
+  };
+  if (!recordId) return failure('Missing recordId');
+  try {
+    const result = await replay(recordId, modifications);
+    return success(result);
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+async function handleWatchdogSnapshot(payload: unknown): Promise<ExtensionApiResponse> {
+  const { origin } = (payload || {}) as { origin?: string };
+  try {
+    if (origin) {
+      return success(Watchdog.inspect(origin));
+    }
+    // No origin: fall back to a per-origin tally summary from the audit log.
+    const summary = Audit.summarize();
+    return success({
+      thresholds: Watchdog.getThresholds(),
+      origins: Object.entries(summary.byOrigin).map(([o, count]) => ({
+        origin: o,
+        decisions: count,
+        watchdog: Watchdog.inspect(o),
+      })),
+    });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+async function handleWatchdogResetOrigin(payload: unknown): Promise<ExtensionApiResponse> {
+  const { origin } = (payload || {}) as { origin?: string };
+  if (!origin) return failure('Missing origin');
+  try {
+    Watchdog.reset(origin);
+    return success({ reset: true });
+  } catch (e) {
+    return failure(e);
   }
 }
 
