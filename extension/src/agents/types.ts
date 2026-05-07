@@ -20,7 +20,14 @@ export type ApiErrorCode =
   | 'ERR_NOT_IMPLEMENTED'
   | 'ERR_SESSION_NOT_FOUND'
   | 'ERR_TIMEOUT'
-  | 'ERR_INTERNAL';
+  | 'ERR_INTERNAL'
+  // Typed-permission decisions surface these.
+  | 'ERR_BLOCKED_BY_POLICY'
+  | 'ERR_LABEL_FLOW_BLOCKED'
+  | 'ERR_TOKEN_EXPIRED'
+  | 'ERR_TOKEN_NOT_FOR_ORIGIN'
+  | 'ERR_UNKNOWN_ACTION'
+  | 'ERR_QUARANTINED';
 
 export interface ApiError {
   code: ApiErrorCode;

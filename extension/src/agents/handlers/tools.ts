@@ -4,7 +4,7 @@
 
 import type { ToolDescriptor } from '../types';
 import type { RequestContext, ResponseSender } from './router-types';
-import { log, requirePermission } from './helpers';
+import { log, requireAction } from './helpers';
 import { listServersWithStatus, callTool } from '../../mcp/host';
 import { isToolAllowed } from '../../policy/permissions';
 
@@ -15,7 +15,7 @@ export async function handleToolsList(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'mcp:tools.list'))) {
+  if (!(await requireAction(ctx, sender, 'tool.list'))) {
     return;
   }
 
@@ -60,13 +60,48 @@ export async function handleToolsCall(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'mcp:tools.call'))) {
+  const payload = ctx.payload as { tool: string; args: Record<string, unknown> };
+
+  // Resolve `serverId/tool` first so the policy engine sees both halves and
+  // can apply per-server / per-tool rules.
+  const parts = payload.tool.split('/');
+  let serverId: string;
+  let toolName: string;
+  if (parts.length >= 2) {
+    serverId = parts[0];
+    toolName = parts.slice(1).join('/');
+  } else {
+    // Try to find the tool in any running server.
+    const servers = await listServersWithStatus();
+    const found = servers.find((s) => s.running && s.tools?.some((t) => t.name === payload.tool));
+    if (!found) {
+      sender.sendResponse({
+        id: ctx.id,
+        ok: false,
+        error: {
+          code: 'ERR_TOOL_NOT_ALLOWED',
+          message: `Tool "${payload.tool}" not found in any running server`,
+        },
+      });
+      return;
+    }
+    serverId = found.id;
+    toolName = payload.tool;
+  }
+
+  if (
+    !(await requireAction(ctx, sender, 'tool.call', {
+      resource: { server: serverId, tool: toolName },
+      reason: `Call tool ${payload.tool}`,
+    }))
+  ) {
     return;
   }
 
-  const payload = ctx.payload as { tool: string; args: Record<string, unknown> };
-
-  // Check if tool is allowed
+  // Origin-level tool allowlist gate. The engine's Tier 8 also consults
+  // it indirectly, but the allowlist UX (user picks a per-tool subset in
+  // the prompt) is not yet expressible as typed rules; keep until the
+  // sidebar tool-allowlist UI moves into the policy file.
   const allowed = await isToolAllowed(ctx.origin, payload.tool);
   if (!allowed) {
     sender.sendResponse({
@@ -81,33 +116,6 @@ export async function handleToolsCall(
   }
 
   try {
-    // Parse tool name to get serverId
-    const parts = payload.tool.split('/');
-    let serverId: string;
-    let toolName: string;
-
-    if (parts.length >= 2) {
-      serverId = parts[0];
-      toolName = parts.slice(1).join('/');
-    } else {
-      // Try to find the tool in any server
-      const servers = await listServersWithStatus();
-      const found = servers.find(s => s.running && s.tools?.some(t => t.name === payload.tool));
-      if (!found) {
-        sender.sendResponse({
-          id: ctx.id,
-          ok: false,
-          error: {
-            code: 'ERR_TOOL_NOT_ALLOWED',
-            message: `Tool "${payload.tool}" not found in any running server`,
-          },
-        });
-        return;
-      }
-      serverId = found.id;
-      toolName = payload.tool;
-    }
-
     const result = await callTool(serverId, toolName, payload.args);
     sender.sendResponse({
       id: ctx.id,

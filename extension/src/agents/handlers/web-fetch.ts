@@ -3,7 +3,7 @@
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { requirePermission } from './helpers';
+import { requireAction } from './helpers';
 
 // Allowed domains for web fetch (user configurable in the future)
 const FETCH_ALLOWED_DOMAINS: string[] = [];
@@ -15,10 +15,6 @@ export async function handleAgentFetch(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'web:fetch'))) {
-    return;
-  }
-
   const payload = ctx.payload as {
     url: string;
     method?: string;
@@ -26,8 +22,44 @@ export async function handleAgentFetch(
     body?: string;
   };
 
+  let parsedUrl: URL;
   try {
-    const url = new URL(payload.url);
+    parsedUrl = new URL(payload.url);
+  } catch {
+    sender.sendResponse({
+      id: ctx.id,
+      ok: false,
+      error: { code: 'ERR_INTERNAL', message: 'Invalid URL' },
+    });
+    return;
+  }
+
+  // Pick same-origin vs cross-origin so the engine can apply the right
+  // info-flow rules. Reads of cross-origin resources are stricter.
+  const callerOrigin = ctx.origin;
+  const callerHost = (() => {
+    try {
+      return new URL(callerOrigin).host;
+    } catch {
+      return '';
+    }
+  })();
+  const action =
+    parsedUrl.host === callerHost
+      ? 'network.egress.same_origin'
+      : 'network.egress.cross_origin';
+
+  if (
+    !(await requireAction(ctx, sender, action, {
+      resource: { host: parsedUrl.host, path: parsedUrl.pathname },
+      reason: `Fetch ${parsedUrl.host}${parsedUrl.pathname}`,
+    }))
+  ) {
+    return;
+  }
+
+  try {
+    const url = parsedUrl;
     
     // Check domain allowlist (for now, allow all - user will configure)
     // In production, this should check against user's configured allowlist
