@@ -6,7 +6,7 @@
 export type { RequestContext, ResponseSender, RequestHandler } from './router-types';
 
 // Helpers
-export { log, requirePermission } from './helpers';
+export { log, requireAction } from './helpers';
 
 // Permission handlers
 export {

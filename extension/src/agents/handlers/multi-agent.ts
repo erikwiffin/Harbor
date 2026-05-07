@@ -12,7 +12,7 @@ import type {
   Supervisor,
   SupervisorTask,
 } from '../../multi-agent/types';
-import { log, requirePermission } from './helpers';
+import { log, requireAction } from './helpers';
 import { checkPermissions } from '../../policy/permissions';
 import { browserAPI } from '../../browser-compat';
 import {
@@ -68,7 +68,7 @@ export async function handleAgentsRegister(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:register'))) {
+  if (!(await requireAction(ctx, sender, 'agent.register', { promptAsScope: 'agents:register' }))) {
     return;
   }
 
@@ -109,7 +109,7 @@ export async function handleAgentsUnregister(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:register'))) {
+  if (!(await requireAction(ctx, sender, 'agent.register', { promptAsScope: 'agents:register' }))) {
     return;
   }
 
@@ -185,7 +185,7 @@ export async function handleAgentsDiscover(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:discover'))) {
+  if (!(await requireAction(ctx, sender, 'agent.discover', { promptAsScope: 'agents:discover' }))) {
     return;
   }
 
@@ -241,10 +241,6 @@ export async function handleAgentsInvoke(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:invoke'))) {
-    return;
-  }
-
   const payload = ctx.payload as {
     agentId: string;
     task: string;
@@ -252,6 +248,21 @@ export async function handleAgentsInvoke(
     timeout?: number;
     traceId?: string;
   };
+
+  // The target agent's origin determines whether this is a same-origin or
+  // cross-origin invoke. Cross-origin gets the stricter
+  // `agent.delegate.crossOrigin` action; same-origin uses `agent.invoke`.
+  const targetAgent = getAgent(payload.agentId);
+  const isCrossOrigin = targetAgent && targetAgent.origin !== ctx.origin;
+  const action = isCrossOrigin ? 'agent.delegate.crossOrigin' : 'agent.invoke';
+  const promptScope = isCrossOrigin ? 'agents:crossOrigin' : 'agents:invoke';
+  if (!(await requireAction(ctx, sender, action, {
+    promptAsScope: promptScope,
+    resource: targetAgent ? { server: targetAgent.id } : undefined,
+    reason: `Invoke agent ${payload.agentId}: ${payload.task}`,
+  }))) {
+    return;
+  }
 
   const traceId = payload.traceId || `harbor-trace-${Date.now()}`;
   log(`[TRACE ${traceId}] handleAgentsInvoke START - target: ${payload.agentId}, task: ${payload.task}`);
@@ -300,7 +311,7 @@ export async function handleAgentsSend(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:message'))) {
+  if (!(await requireAction(ctx, sender, 'agent.message', { promptAsScope: 'agents:message' }))) {
     return;
   }
 
@@ -331,7 +342,7 @@ export async function handleAgentsSubscribe(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:message'))) {
+  if (!(await requireAction(ctx, sender, 'agent.message', { promptAsScope: 'agents:message' }))) {
     return;
   }
 
@@ -569,7 +580,7 @@ export async function handleOrchestratePipeline(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:invoke'))) {
+  if (!(await requireAction(ctx, sender, 'agent.invoke', { promptAsScope: 'agents:invoke' }))) {
     return;
   }
 
@@ -597,7 +608,7 @@ export async function handleOrchestrateParallel(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:invoke'))) {
+  if (!(await requireAction(ctx, sender, 'agent.invoke', { promptAsScope: 'agents:invoke' }))) {
     return;
   }
 
@@ -654,7 +665,7 @@ export async function handleOrchestrateRoute(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:invoke'))) {
+  if (!(await requireAction(ctx, sender, 'agent.invoke', { promptAsScope: 'agents:invoke' }))) {
     return;
   }
 
@@ -681,7 +692,7 @@ export async function handleOrchestrateSupervisor(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:invoke'))) {
+  if (!(await requireAction(ctx, sender, 'agent.invoke', { promptAsScope: 'agents:invoke' }))) {
     return;
   }
 
@@ -712,11 +723,20 @@ export async function handleRemoteConnect(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:remote'))) {
+  const payload = ctx.payload as RemoteAgentEndpoint;
+  let urlHost: string | undefined;
+  try {
+    urlHost = new URL(payload.url).hostname;
+  } catch {
+    urlHost = undefined;
+  }
+  if (!(await requireAction(ctx, sender, 'agent.delegate.remote', {
+    promptAsScope: 'agents:remote',
+    resource: urlHost ? { host: urlHost } : undefined,
+    reason: `Connect to remote agent at ${payload.url}`,
+  }))) {
     return;
   }
-
-  const payload = ctx.payload as RemoteAgentEndpoint;
 
   try {
     const agent = await connectRemoteAgent(payload);
@@ -805,11 +825,20 @@ export async function handleRemoteDiscover(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'agents:remote'))) {
+  const payload = ctx.payload as { baseUrl: string };
+  let urlHost: string | undefined;
+  try {
+    urlHost = new URL(payload.baseUrl).hostname;
+  } catch {
+    urlHost = undefined;
+  }
+  if (!(await requireAction(ctx, sender, 'agent.delegate.remote', {
+    promptAsScope: 'agents:remote',
+    resource: urlHost ? { host: urlHost } : undefined,
+    reason: `Discover agents at ${payload.baseUrl}`,
+  }))) {
     return;
   }
-
-  const payload = ctx.payload as { baseUrl: string };
 
   try {
     const agents = await discoverRemoteAgents(payload.baseUrl);

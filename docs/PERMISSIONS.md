@@ -661,7 +661,7 @@ extension/src/policy/
 The flow through the system is:
 
 ```
-agents/handlers/*  ─[requirePermission]─►  policy/engine.evaluate
+agents/handlers/*  ─[requireAction]─►  policy/engine.evaluate
                                               │
                                               ├─►  policy/sensitivity
                                               ├─►  policy/labels (input/output flow)

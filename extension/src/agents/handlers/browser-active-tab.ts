@@ -3,7 +3,7 @@
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { requirePermission } from './helpers';
+import { requireAction } from './helpers';
 import {
   getTabReadability,
   clickElement,
@@ -22,7 +22,10 @@ export async function handleActiveTabReadability(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.read'))) {
+  if (!(await requireAction(ctx, sender, 'browser.read.activeTab', {
+    promptAsScope: 'browser:activeTab.read',
+    reason: 'Read text content from the current page',
+  }))) {
     return;
   }
 
@@ -57,7 +60,11 @@ export async function handleActiveTabClick(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.interact'))) {
+  const payload0 = ctx.payload as { selector?: string };
+  if (!(await requireAction(ctx, sender, 'browser.write.interact', {
+    promptAsScope: 'browser:activeTab.interact',
+    reason: `Click ${payload0.selector ?? 'element'}`,
+  }))) {
     return;
   }
 
@@ -94,7 +101,11 @@ export async function handleActiveTabFill(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.interact'))) {
+  const payload0 = ctx.payload as { selector?: string };
+  if (!(await requireAction(ctx, sender, 'browser.write.interact', {
+    promptAsScope: 'browser:activeTab.interact',
+    reason: `Fill ${payload0.selector ?? 'element'}`,
+  }))) {
     return;
   }
 
@@ -131,7 +142,11 @@ export async function handleActiveTabSelect(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.interact'))) {
+  const payload0 = ctx.payload as { selector?: string };
+  if (!(await requireAction(ctx, sender, 'browser.write.interact', {
+    promptAsScope: 'browser:activeTab.interact',
+    reason: `Select option in ${payload0.selector ?? 'element'}`,
+  }))) {
     return;
   }
 
@@ -168,7 +183,10 @@ export async function handleActiveTabScroll(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.interact'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.interact', {
+    promptAsScope: 'browser:activeTab.interact',
+    reason: 'Scroll the page',
+  }))) {
     return;
   }
 
@@ -205,7 +223,11 @@ export async function handleActiveTabGetElement(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.read'))) {
+  const payload0 = ctx.payload as { selector?: string };
+  if (!(await requireAction(ctx, sender, 'browser.read.element', {
+    promptAsScope: 'browser:activeTab.read',
+    reason: `Inspect ${payload0.selector ?? 'element'}`,
+  }))) {
     return;
   }
 
@@ -242,7 +264,11 @@ export async function handleActiveTabWaitForSelector(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.read'))) {
+  const payload0 = ctx.payload as { selector?: string };
+  if (!(await requireAction(ctx, sender, 'browser.read.element', {
+    promptAsScope: 'browser:activeTab.read',
+    reason: `Wait for ${payload0.selector ?? 'element'}`,
+  }))) {
     return;
   }
 
@@ -279,7 +305,10 @@ export async function handleActiveTabScreenshot(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:activeTab.screenshot'))) {
+  if (!(await requireAction(ctx, sender, 'browser.read.screenshot', {
+    promptAsScope: 'browser:activeTab.screenshot',
+    reason: 'Capture a screenshot of the current tab',
+  }))) {
     return;
   }
 

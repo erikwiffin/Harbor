@@ -3,7 +3,7 @@
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { log, requirePermission } from './helpers';
+import { log, requireAction } from './helpers';
 import {
   getTabReadability,
   getTabHtml,
@@ -33,7 +33,18 @@ export async function handleBrowserNavigate(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:navigate'))) {
+  const payload = ctx.payload as { url: string };
+  let urlHost: string | undefined;
+  try {
+    urlHost = new URL(payload.url, ctx.origin).hostname;
+  } catch {
+    urlHost = undefined;
+  }
+  if (!(await requireAction(ctx, sender, 'browser.write.navigate', {
+    promptAsScope: 'browser:navigate',
+    resource: urlHost ? { host: urlHost } : undefined,
+    reason: `Navigate to ${payload.url}`,
+  }))) {
     return;
   }
 
@@ -45,8 +56,6 @@ export async function handleBrowserNavigate(
     });
     return;
   }
-
-  const payload = ctx.payload as { url: string };
 
   try {
     await navigateTab(ctx.origin, ctx.tabId, payload.url, true);
@@ -70,7 +79,12 @@ export async function handleBrowserWaitForNavigation(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:navigate'))) {
+  // Waiting for navigation is metadata-ish — but we keep it gated so the
+  // page can't ambient-poll the navigation lifecycle without consent.
+  if (!(await requireAction(ctx, sender, 'browser.write.navigate', {
+    promptAsScope: 'browser:navigate',
+    reason: 'Wait for navigation to complete',
+  }))) {
     return;
   }
 
@@ -111,7 +125,10 @@ export async function handleTabsList(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.read'))) {
+  if (!(await requireAction(ctx, sender, 'browser.read.tabs', {
+    promptAsScope: 'browser:tabs.read',
+    reason: 'List open tabs',
+  }))) {
     return;
   }
 
@@ -137,7 +154,10 @@ export async function handleTabsGet(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.read'))) {
+  if (!(await requireAction(ctx, sender, 'browser.read.tabs', {
+    promptAsScope: 'browser:tabs.read',
+    reason: 'Get info on a tab',
+  }))) {
     return;
   }
 
@@ -166,12 +186,21 @@ export async function handleTabsCreate(
   sender: ResponseSender,
 ): Promise<void> {
   console.log('[Harbor Router] handleTabsCreate - origin:', ctx.origin, 'cookieStoreId:', ctx.cookieStoreId, 'payload:', ctx.payload);
-  
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
-    return;
-  }
 
   const payload = ctx.payload as { url: string; active?: boolean; index?: number; windowId?: number };
+  let urlHost: string | undefined;
+  try {
+    urlHost = new URL(payload.url, ctx.origin).hostname;
+  } catch {
+    urlHost = undefined;
+  }
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    resource: urlHost ? { host: urlHost } : undefined,
+    reason: `Open ${payload.url} in a new tab`,
+  }))) {
+    return;
+  }
 
   try {
     // Pass cookieStoreId to ensure new tab opens in the same Firefox container as the parent
@@ -198,7 +227,10 @@ export async function handleTabsClose(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Close a tab the agent created',
+  }))) {
     return;
   }
 
@@ -244,8 +276,11 @@ export async function handleSpawnedTabReadability(
   sender: ResponseSender,
 ): Promise<void> {
   log('handleSpawnedTabReadability - origin:', ctx.origin, 'tabId:', ctx.tabId, 'payload:', ctx.payload);
-  
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Read content from an agent-created tab',
+  }))) {
     return;
   }
 
@@ -287,7 +322,10 @@ export async function handleSpawnedTabGetHtml(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Get HTML from an agent-created tab',
+  }))) {
     return;
   }
 
@@ -327,7 +365,10 @@ export async function handleSpawnedTabClick(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Click in an agent-created tab',
+  }))) {
     return;
   }
 
@@ -367,7 +408,10 @@ export async function handleSpawnedTabFill(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Fill input in an agent-created tab',
+  }))) {
     return;
   }
 
@@ -407,7 +451,10 @@ export async function handleSpawnedTabScroll(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Scroll in an agent-created tab',
+  }))) {
     return;
   }
 
@@ -447,7 +494,10 @@ export async function handleSpawnedTabScreenshot(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Screenshot an agent-created tab',
+  }))) {
     return;
   }
 
@@ -487,7 +537,18 @@ export async function handleSpawnedTabNavigate(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  const payload0 = ctx.payload as { url?: string };
+  let urlHost: string | undefined;
+  try {
+    if (payload0.url) urlHost = new URL(payload0.url, ctx.origin).hostname;
+  } catch {
+    urlHost = undefined;
+  }
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    resource: urlHost ? { host: urlHost } : undefined,
+    reason: payload0.url ? `Navigate agent tab to ${payload0.url}` : 'Navigate agent tab',
+  }))) {
     return;
   }
 
@@ -527,7 +588,10 @@ export async function handleSpawnedTabWaitForNavigation(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'browser:tabs.create'))) {
+  if (!(await requireAction(ctx, sender, 'browser.write.tabsCreate', {
+    promptAsScope: 'browser:tabs.create',
+    reason: 'Wait for navigation in an agent-created tab',
+  }))) {
     return;
   }
 

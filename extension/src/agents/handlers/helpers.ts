@@ -1,17 +1,11 @@
 /**
  * Shared helper functions for request handlers.
  *
- * The primary entry point handlers use is `requireAction(ctx, sender,
+ * The single entry point handlers use is `requireAction(ctx, sender,
  * action, options)`, which routes through the PolicyEngine. The engine
  * walks the 9-tier ladder and returns a decision; on `ask` or `preview`
  * we surface the existing prompt UI; on `allow` the handler proceeds; on
  * `deny` the handler emits a structured error response.
- *
- * The legacy `requirePermission(ctx, sender, scope)` is preserved as a
- * thin shim that resolves the colon-form scope to its primary typed
- * action and delegates. Subsequent commits will drop the shim once every
- * handler is migrated, but for one commit they coexist so the migration
- * is mechanical and reviewable.
  */
 
 import type { PermissionScope } from '../types';
@@ -239,92 +233,3 @@ function primaryLegacyScope(action: TypedAction): PermissionScope | null {
   }
 }
 
-// =============================================================================
-// Legacy shim
-// =============================================================================
-
-/**
- * Legacy entry point. Resolves the colon-form scope to its primary typed
- * action and delegates to `requireAction`. New handlers should call
- * `requireAction` directly with the right typed action and resource.
- *
- * Kept during migration so unmigrated handlers continue to work; will be
- * removed once every call site is updated.
- */
-export async function requirePermission(
-  ctx: RequestContext,
-  sender: ResponseSender,
-  scope: PermissionScope,
-): Promise<boolean> {
-  const action = primaryTypedAction(scope);
-  if (!action) {
-    sender.sendResponse({
-      id: ctx.id,
-      ok: false,
-      error: {
-        code: 'ERR_SCOPE_REQUIRED',
-        message: `Scope "${scope}" has no typed-action mapping.`,
-        details: { requiredScope: scope },
-      },
-    });
-    return false;
-  }
-  return requireAction(ctx, sender, action, { promptAsScope: scope });
-}
-
-/**
- * Inverse of `primaryLegacyScope`: pick the canonical typed action for a
- * legacy scope. Used only by the legacy `requirePermission` shim.
- */
-function primaryTypedAction(scope: PermissionScope): TypedAction | null {
-  switch (scope) {
-    case 'model:prompt':
-      return 'model.prompt.remote.firstParty';
-    case 'model:tools':
-      return 'agent.run';
-    case 'model:list':
-      return 'model.list';
-    case 'mcp:tools.list':
-      return 'tool.list';
-    case 'mcp:tools.call':
-      return 'tool.call';
-    case 'mcp:servers.register':
-      return 'mcp.server.register';
-    case 'browser:activeTab.read':
-      return 'browser.read.activeTab';
-    case 'browser:activeTab.interact':
-      return 'browser.write.interact';
-    case 'browser:activeTab.screenshot':
-      return 'browser.read.screenshot';
-    case 'browser:navigate':
-      return 'browser.write.navigate';
-    case 'browser:tabs.read':
-      return 'browser.read.tabs';
-    case 'browser:tabs.create':
-      return 'browser.write.tabsCreate';
-    case 'web:fetch':
-      return 'network.egress.cross_origin';
-    case 'chat:open':
-      return 'chat.open';
-    case 'addressBar:suggest':
-      return 'addressBar.suggest';
-    case 'addressBar:context':
-      return 'addressBar.read.context';
-    case 'addressBar:history':
-      return 'addressBar.read.history';
-    case 'addressBar:execute':
-      return 'addressBar.execute';
-    case 'agents:register':
-      return 'agent.register';
-    case 'agents:discover':
-      return 'agent.discover';
-    case 'agents:invoke':
-      return 'agent.invoke';
-    case 'agents:message':
-      return 'agent.message';
-    case 'agents:crossOrigin':
-      return 'agent.delegate.crossOrigin';
-    case 'agents:remote':
-      return 'agent.delegate.remote';
-  }
-}

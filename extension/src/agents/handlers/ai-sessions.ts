@@ -3,7 +3,7 @@
  */
 
 import type { RequestContext, ResponseSender } from './router-types';
-import { log, requirePermission } from './helpers';
+import { log, requireAction } from './helpers';
 import { bridgeRequest } from '../../llm/bridge-client';
 import { getRuntimeCapabilities, listAllProviders } from '../../llm/provider-registry';
 
@@ -55,7 +55,13 @@ export async function handleCreateTextSession(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'model:prompt'))) {
+  // Creating a text session is a no-op against the bridge — the cost is
+  // borne when the page actually prompts. We gate on the *least* permissive
+  // action (`model.prompt.local`) so a page that only ever uses on-device
+  // models doesn't get prompted for cloud egress it never makes.
+  if (!(await requireAction(ctx, sender, 'model.prompt.local', {
+    promptAsScope: 'model:prompt',
+  }))) {
     return;
   }
 
@@ -82,10 +88,6 @@ export async function handleSessionPrompt(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'model:prompt'))) {
-    return;
-  }
-
   const payload = ctx.payload as { sessionId: string; input: string };
   const session = textSessions.get(payload.sessionId);
 
@@ -104,6 +106,26 @@ export async function handleSessionPrompt(
       ok: false,
       error: { code: 'ERR_PERMISSION_DENIED', message: 'Session belongs to different origin' },
     });
+    return;
+  }
+
+  // Pick the typed action based on what the configured model actually does.
+  // We can't know the locality of an arbitrary model name without a registry
+  // lookup, so we conservatively assume `remote.firstParty` (the user's
+  // configured account) for any session that names a model. Sessions with no
+  // model selection ride the local path; the engine will still gate
+  // remote-egress at the bridge layer through `network.egress.cross_origin`
+  // when the bridge actually fetches.
+  const modelName =
+    typeof session.options.model === 'string' ? session.options.model.toLowerCase() : '';
+  const looksLocal =
+    !modelName ||
+    modelName.startsWith('ollama:') ||
+    modelName.startsWith('local:') ||
+    modelName.startsWith('firefox-ml:') ||
+    modelName.startsWith('chrome-ai:');
+  const action = looksLocal ? 'model.prompt.local' : 'model.prompt.remote.firstParty';
+  if (!(await requireAction(ctx, sender, action, { promptAsScope: 'model:prompt' }))) {
     return;
   }
 
@@ -204,7 +226,7 @@ export async function handleProvidersList(
   ctx: RequestContext,
   sender: ResponseSender,
 ): Promise<void> {
-  if (!(await requirePermission(ctx, sender, 'model:list'))) {
+  if (!(await requireAction(ctx, sender, 'model.list', { promptAsScope: 'model:list' }))) {
     return;
   }
 
