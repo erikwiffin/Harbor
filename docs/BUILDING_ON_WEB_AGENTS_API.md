@@ -103,7 +103,42 @@ window.addEventListener('agent-ready', (e) => {
 
 ## Permissions (required before use)
 
-Every origin must request permission. Request once per page/session.
+Every origin must declare what it intends to do before any tool, model,
+or browser API is reachable. There are two ways to do this — pick the
+one that fits your codebase.
+
+### Recommended: `agent.requestCapabilities()` (typed actions)
+
+`requestCapabilities` mints a session bound to a capability token in
+the same vocabulary the policy engine uses internally. It also lets
+you pick a starting **mode** (Plan / Execute / Watch) and a
+per-session budget. See [`docs/PERMISSIONS.md`](./PERMISSIONS.md) for
+the full design.
+
+```javascript
+const session = await window.agent.requestCapabilities({
+  name: 'Article assistant',
+  reason: 'Read the page and propose follow-ups.',
+  mode: 'plan',
+  require: [
+    { action: 'model.prompt.local' },
+    { action: 'browser.read.activeTab' },
+    { action: 'tool.call', server: 'time-wasm', toolNames: ['time.now'] },
+  ],
+  budget: { maxToolCalls: 30, ttlMinutes: 15 },
+});
+
+// Later, narrow into Watch when the user clicks "Run":
+await window.agent.upgradeSession(session.id, { mode: 'watch' });
+
+await session.tools.call('time-wasm', 'time.now', {});
+```
+
+### Legacy: `agent.requestPermissions()` (origin-level scopes)
+
+Still supported and internally mapped to typed actions. Use this if
+you only need a single origin-level grant and don't need session
+modes or budgets.
 
 ```javascript
 const result = await window.agent.requestPermissions({

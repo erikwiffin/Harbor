@@ -69,7 +69,33 @@ const caps = window.agent.capabilities();
 
 ## Permissions (MUST REQUEST FIRST)
 
-All APIs require permission. Request once per origin.
+All APIs require permission. There are two paths — pick one per session:
+
+### Recommended — `agent.requestCapabilities()` (typed actions)
+
+Mints a session bound to a capability token. Scoped to `plan` /
+`execute` / `watch`. Plays nicely with budgets and the activity feed.
+
+```javascript
+const session = await window.agent.requestCapabilities({
+  name: 'Article assistant',
+  reason: 'Read the page and propose follow-ups.',
+  mode: 'plan',
+  require: [
+    { action: 'model.prompt.local' },
+    { action: 'browser.read.activeTab' },
+    { action: 'tool.call', server: 'time-wasm', toolNames: ['time.now'] },
+  ],
+  budget: { maxToolCalls: 30, ttlMinutes: 15 },
+});
+
+// Narrow into Watch when the user clicks "Run":
+await window.agent.upgradeSession(session.id, { mode: 'watch' });
+```
+
+### Legacy — `agent.requestPermissions()` (origin-level scopes)
+
+Still works; mapped to typed actions internally.
 
 ```javascript
 const result = await window.agent.requestPermissions({

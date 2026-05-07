@@ -155,12 +155,62 @@ const availability = await window.ai.canCreateTextSession();
 
 ## Permission Model
 
-All API calls that access AI models or external tools require user permission. Permissions are:
+> **Canonical reference:** [`docs/PERMISSIONS.md`](./PERMISSIONS.md). The
+> short version below is the surface a page author needs; the deeper
+> design (typed actions, capability tokens, the 9-tier policy ladder,
+> information-flow labels, watchdog containment, the audit log, the
+> decision simulator) lives in that document.
 
-1. **Scoped per-origin**: Each website has its own permission set
-2. **Capability-based**: Specific scopes grant access to specific APIs
-3. **Explicitly granted**: User must consent via a permission prompt
-4. **Revocable**: Users can revoke permissions at any time
+All API calls go through a single chokepoint — the **PolicyEngine** —
+which evaluates each call against a 9-tier ladder of checks. The
+ladder produces one of five effects: `allow`, `ask`, `preview`,
+`attenuate`, or `deny`. Page authors usually do not see the ladder
+directly; they request capabilities up front, then call APIs.
+
+The model has four properties page authors should know:
+
+1. **Origin-scoped.** `example.com`'s grants do not transfer to
+   `other.com`. Tool allowlists are per-origin too.
+2. **Typed actions, not opaque scopes.** Internally, every API call is
+   one of a fixed set of typed actions (`model.prompt.local`,
+   `tool.call`, `browser.read.activeTab`,
+   `network.egress.cross_origin`, etc.). Policy rules are expressed
+   in the same vocabulary, so what gets logged and what gets prompted
+   line up exactly.
+3. **Sessions are bound to a capability token.** When a page calls
+   `agent.requestCapabilities()` (the recommended entry point), the
+   extension mints an unforgeable token that carries the session's
+   `allowedActions`, `acceptedLabels`, budgets, TTL, and **mode**
+   (`plan` / `execute` / `watch`). Subagent delegations re-attenuate
+   the parent token; authority can shrink, never grow.
+4. **Auditable.** Every decision, including silent allows, is recorded
+   and surfaced in the sidebar's Activity feed with a "Why?" trace
+   and a "What if?" simulator.
+
+The legacy `agent.requestPermissions()` and `PermissionScope` surface
+documented further below remains a working path for simple
+origin-level grants; it is implemented by mapping each scope to its
+typed action(s) on the way in. New code should prefer
+`agent.requestCapabilities()` and `agent.upgradeSession()` because
+those map directly to the engine's vocabulary and play nicely with
+mode and budgets.
+
+```javascript
+// Recommended: request typed actions up front.
+const session = await agent.requestCapabilities({
+  name: 'Article assistant',
+  reason: 'Read the page and propose follow-ups.',
+  mode: 'plan',
+  require: [
+    { action: 'model.prompt.local' },
+    { action: 'browser.read.activeTab' },
+  ],
+  budget: { maxToolCalls: 30, ttlMinutes: 15 },
+});
+
+// Later, narrow into Execute (only on user-driven write):
+await agent.upgradeSession(session.id, { mode: 'execute' });
+```
 
 ---
 

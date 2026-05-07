@@ -482,22 +482,51 @@ for await (const event of window.agent.run({
 
 ## Permission System
 
-Harbor uses a capability-based permission system scoped per-origin.
+Harbor uses a layered, capability-based permission system. The
+canonical reference is [`docs/PERMISSIONS.md`](./PERMISSIONS.md); the
+short version below is what you need when reading or modifying the
+extension code.
 
 ### Security Model
 
-1. **Per-origin permissions**: Each website must be granted access separately
-2. **User consent required**: Extension shows a permission prompt for new sites
-3. **Grant types**: "Allow once" (session) or "Always allow" (persistent)
-4. **Scope isolation**: Sites can only access granted scopes
-5. **Tool filtering**: `agent.run()` can be limited to specific tools
+1. **Single chokepoint.** Every page-facing handler routes through
+   `requireAction(...)` in
+   `extension/src/agents/handlers/helpers.ts`, which calls into the
+   `PolicyEngine`. There is no other path from the page to a tool,
+   model, or browser primitive.
+2. **Typed actions.** Each call is described by an action like
+   `model.prompt.local`, `tool.call`, `browser.read.activeTab`, or
+   `network.egress.cross_origin`. Actions carry metadata (effect tier,
+   locality, reversibility, default labels) that drive the engine's
+   defaults.
+3. **9-tier ladder.** The engine evaluates each action through a
+   fixed ladder: Ambient → Managed Deny → Sensitivity Gate →
+   Information-Flow Check → Watchdog Containment → Capability Token
+   → Policy Allow Rule → Policy Ask Rule → Per-Origin Grant →
+   Default-for-Effect. Tiers 1–5 are a safety floor that user policy
+   cannot override.
+4. **Sessions and capability tokens.** Every active agent session is
+   bound to an unforgeable token that captures `allowedActions`,
+   `acceptedLabels`, budgets, TTL, and **mode** (`plan` /
+   `execute` / `watch`). Subagent delegations attenuate, never
+   widen, the parent token.
+5. **Audit + simulator.** Every decision lands in
+   `extension/src/policy/audit.ts` and shows up in the sidebar's
+   Activity panel, with "Why?" / "What if?" affordances backed by
+   `extension/src/policy/simulator.ts`.
+6. **Per-origin grants** remain a first-class concept and are
+   resolved at Tier 8 (`extension/src/policy/origin-grants.ts`).
+   `requestPermissions` on the page side maps to this tier.
 
 ### Storage
 
-Permissions are stored in browser extension storage:
-- **Persistent grants**: `browser.storage.local`
-- **Temporary grants**: In-memory with TTL (10 minutes default)
-- **Tab-scoped grants**: Expire when tab closes
+| Surface | Where it lives | Notes |
+|---|---|---|
+| Per-origin grants | `browser.storage.local` (`harbor_permissions:*`) | Resolved at Tier 8. Same storage `requestPermissions` writes to. |
+| Capability tokens | In-memory in `extension/src/policy/tokens.ts` | Revoked when a session ends. Never persisted. |
+| Audit ring buffer | In-memory in `extension/src/policy/audit.ts` | ~5,000 records. Wiped on extension restart. |
+| Watchdog state | In-memory in `extension/src/policy/watchdog.ts` | Per-origin, reset from the sidebar. |
+| Policy documents | `browser.storage.managed` (managed) + `browser.storage.local` (user) | Loaded by `extension/src/policy/store.ts`. |
 
 ---
 

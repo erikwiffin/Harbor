@@ -227,6 +227,17 @@ Tools, browser access, sessions, and multi-agent capabilities.
 
 All agent capabilities require user permission. The permission system is **per-origin** — each website must request and be granted permissions separately.
 
+> **Recommended for new code:** call
+> [`agent.requestCapabilities()`](#agentrequestcapabilities) and
+> [`agent.upgradeSession()`](#agentupgradesession) instead of the
+> legacy `requestPermissions` flow. The new APIs operate in the same
+> typed-action vocabulary as the policy engine, so what you ask for,
+> what the user sees, and what the audit log records all line up.
+> The full design is in
+> [`docs/PERMISSIONS.md`](./PERMISSIONS.md). The legacy flow below
+> still works and is internally translated into the same engine
+> calls, so existing pages keep running.
+
 #### How Permissions Work
 
 1. **Request**: Your page calls `agent.requestPermissions()` with desired scopes
@@ -234,6 +245,17 @@ All agent capabilities require user permission. The permission system is **per-o
 3. **User Choice**: User can "Allow" (once or always) or "Deny"
 4. **Storage**: Grants are stored in the extension's local storage, keyed by origin
 5. **Enforcement**: All API calls check permissions before executing
+
+Behind the scenes, every call from your page now flows through the
+**PolicyEngine**, which evaluates the call against typed actions
+(`model.prompt.local`, `tool.call`, `browser.read.activeTab`,
+`network.egress.cross_origin`, etc.) and capability tokens minted at
+session creation. Origin grants from `requestPermissions` are honored
+at Tier 8 of the engine ladder; explicit `deny` rules in the user's
+policy still win, and Tier 1–4 safety floors (managed denies,
+sensitivity gates, information-flow checks, watchdog containment)
+cannot be overridden by any grant. See
+[`docs/PERMISSIONS.md`](./PERMISSIONS.md) for the full ladder.
 
 #### Permission Grant Types
 
@@ -326,6 +348,59 @@ console.log('Allowed tools:', result.allowedTools);
 ```
 
 If tools are specified, the permission prompt displays each tool with a checkbox, allowing users to grant access to specific tools only.
+
+#### agent.requestCapabilities(options)
+
+The recommended replacement for `requestPermissions`. Mints a session
+bound to a capability token in the typed-action vocabulary. Returns
+the session object you can pass to `agent.tools.call`,
+`agent.browser.*`, etc.
+
+```javascript
+const session = await window.agent.requestCapabilities({
+  name: 'Article assistant',
+  reason: 'Read the page and propose follow-ups.',
+  mode: 'plan',                       // 'plan' | 'execute' | 'watch'
+  require: [
+    { action: 'model.prompt.local' },
+    { action: 'browser.read.activeTab' },
+    { action: 'tool.call', server: 'time-wasm', toolNames: ['time.now'] },
+  ],
+  optional: [
+    { action: 'network.egress.cross_origin' },
+  ],
+  budget: { maxToolCalls: 30, ttlMinutes: 15 },
+});
+
+// Use the session like any other.
+await session.tools.call('time-wasm', 'time.now', {});
+```
+
+Behind the scenes the request becomes a `session.create` call with a
+freshly-minted capability token; the engine narrows the token to the
+intersection of what the user has granted, what your `require` list
+asks for, and what your origin policy allows. Subagents the session
+spawns are attenuated from this token automatically — they cannot
+gain authority you didn't have.
+
+#### agent.upgradeSession(sessionId, options)
+
+Change a session's mode after creation. The mode lattice
+(`plan ⊑ watch ⊑ execute`) only allows narrowing; widening calls
+return `false` and leave the session unchanged.
+
+```javascript
+// Pattern 1: start in Plan, narrow into Watch when the user clicks
+// "Run" so each write is previewed:
+await window.agent.upgradeSession(session.id, { mode: 'watch' });
+
+// Pattern 2: drop a long-running session back to Plan when the user
+// idles or wants to review.
+await window.agent.upgradeSession(session.id, { mode: 'plan' });
+```
+
+For the full mode semantics, see
+[`docs/PERMISSIONS.md`](./PERMISSIONS.md).
 
 #### agent.permissions.list()
 
