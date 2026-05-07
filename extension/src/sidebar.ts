@@ -1389,6 +1389,14 @@ if (activityPanelHeader && activityPanelToggle && activityBody) {
   setupPanelToggle(activityPanelHeader, activityPanelToggle, activityBody);
 }
 
+type AuditTraceStep = {
+  tier: number;
+  source: string;
+  effect?: string;
+  reason?: string;
+  rule?: { id: string };
+};
+
 type AuditRecordView = {
   id: string;
   timestamp: number;
@@ -1402,6 +1410,9 @@ type AuditRecordView = {
   errorCode?: string;
   labelsIn: string[];
   labelsOut: string[];
+  trace?: AuditTraceStep[];
+  resource?: { server?: string; tool?: string; host?: string; path?: string };
+  isSubagent?: boolean;
 };
 
 type AuditSummary = {
@@ -1427,6 +1438,139 @@ function effectBadge(effect: string): string {
   };
   const c = colorMap[effect] ?? '#6b7280';
   return `<span style="background:${c};color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(effect)}</span>`;
+}
+
+function renderTrace(trace: AuditTraceStep[] | undefined): string {
+  if (!trace || trace.length === 0) {
+    return '<em style="color:var(--color-text-muted);">No tier-by-tier trace recorded for this decision.</em>';
+  }
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <thead><tr style="text-align:left;color:var(--color-text-muted);">
+      <th style="padding:2px 6px;">Tier</th>
+      <th style="padding:2px 6px;">Source</th>
+      <th style="padding:2px 6px;">Effect</th>
+      <th style="padding:2px 6px;">Reason</th>
+    </tr></thead>
+    <tbody>
+      ${trace.map((s) => `
+        <tr>
+          <td style="padding:2px 6px;color:var(--color-text-muted);">${s.tier}</td>
+          <td style="padding:2px 6px;"><code>${escapeHtml(s.source)}</code></td>
+          <td style="padding:2px 6px;">${s.effect ? effectBadge(s.effect) : '—'}</td>
+          <td style="padding:2px 6px;">${escapeHtml(s.reason ?? '')}</td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function runWhatIf(recordId: string, modeOverride: string, container: HTMLElement): Promise<void> {
+  container.innerHTML = '<em style="color:var(--color-text-muted);">Running simulation…</em>';
+  try {
+    const resp = await browserAPI.runtime.sendMessage({
+      type: 'policy.replay',
+      recordId,
+      modifications: modeOverride ? { mode: modeOverride } : {},
+    }) as {
+      ok?: boolean;
+      result?: {
+        decision: { effect: string; tier: number; reason: string; trace?: AuditTraceStep[] };
+        diff?: {
+          effectChanged?: { from: string; to: string };
+          tierChanged?: { from: number; to: number };
+        };
+      };
+      error?: string;
+    };
+    if (!resp?.ok || !resp.result) {
+      container.innerHTML = `<em style="color:var(--color-error);">Simulation failed: ${escapeHtml(resp?.error ?? 'unknown')}</em>`;
+      return;
+    }
+    const { decision, diff } = resp.result;
+    const diffNote = diff?.effectChanged
+      ? `<div style="margin-bottom:4px;color:var(--color-warning);"><strong>Different outcome:</strong> ${escapeHtml(diff.effectChanged.from)} → ${escapeHtml(diff.effectChanged.to)}</div>`
+      : `<div style="margin-bottom:4px;color:var(--color-success);">Outcome unchanged: still <strong>${escapeHtml(decision.effect)}</strong>.</div>`;
+    container.innerHTML = `
+      ${diffNote}
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+        ${effectBadge(decision.effect)}
+        <span style="font-size:11px;color:var(--color-text-muted);">tier ${decision.tier}</span>
+      </div>
+      <div style="font-size:11px;color:var(--color-text-muted);margin-bottom:6px;">${escapeHtml(decision.reason)}</div>
+      ${renderTrace(decision.trace)}
+    `;
+  } catch (err) {
+    container.innerHTML = `<em style="color:var(--color-error);">${escapeHtml(err instanceof Error ? err.message : String(err))}</em>`;
+  }
+}
+
+function renderActivityDetail(record: AuditRecordView): string {
+  const labels = (record.labelsIn.length || record.labelsOut.length)
+    ? `<div style="margin-bottom:6px;">
+        ${record.labelsIn.length ? `<div><strong>Labels in:</strong> ${escapeHtml(record.labelsIn.join(', '))}</div>` : ''}
+        ${record.labelsOut.length ? `<div><strong>Labels out:</strong> ${escapeHtml(record.labelsOut.join(', '))}</div>` : ''}
+      </div>`
+    : '';
+  const resource = record.resource && Object.values(record.resource).some(Boolean)
+    ? `<div style="margin-bottom:6px;"><strong>Resource:</strong> <code>${escapeHtml(JSON.stringify(record.resource))}</code></div>`
+    : '';
+  const errorCode = record.errorCode ? `<div style="margin-bottom:6px;"><strong>Error:</strong> <code>${escapeHtml(record.errorCode)}</code></div>` : '';
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div>
+        <div style="font-weight:600;margin-bottom:4px;">Why?</div>
+        <div style="margin-bottom:4px;">${escapeHtml(record.reason)}</div>
+        ${resource}
+        ${labels}
+        ${errorCode}
+        <div style="margin-top:6px;">${renderTrace(record.trace)}</div>
+      </div>
+      <div>
+        <div style="font-weight:600;margin-bottom:4px;">What if…</div>
+        <div style="margin-bottom:6px;color:var(--color-text-muted);">Replay this decision under a different session mode. The simulator does not change live state.</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <select class="form-input form-input-sm whatif-mode" style="height:24px;font-size:var(--text-xs);padding:0 var(--space-2);">
+            <option value="">— current —</option>
+            <option value="plan">plan</option>
+            <option value="execute">execute</option>
+            <option value="watch">watch</option>
+          </select>
+          <button class="btn btn-sm whatif-run">Run</button>
+        </div>
+        <div class="whatif-result" style="margin-top:6px;"></div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleActivityDetail(row: HTMLElement): void {
+  const detail = row.querySelector('.activity-detail') as HTMLElement | null;
+  if (!detail) return;
+  if (detail.style.display === 'block') {
+    detail.style.display = 'none';
+    detail.innerHTML = '';
+    return;
+  }
+  const json = row.dataset.recordJson;
+  if (!json) return;
+  let record: AuditRecordView | null = null;
+  try {
+    record = JSON.parse(decodeURIComponent(json)) as AuditRecordView;
+  } catch {
+    return;
+  }
+  detail.innerHTML = renderActivityDetail(record);
+  detail.style.display = 'block';
+  // Wire up the What-if controls inside this detail panel.
+  const runBtn = detail.querySelector('.whatif-run') as HTMLButtonElement | null;
+  const modeSelect = detail.querySelector('.whatif-mode') as HTMLSelectElement | null;
+  const resultBox = detail.querySelector('.whatif-result') as HTMLElement | null;
+  if (runBtn && modeSelect && resultBox && record) {
+    runBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runWhatIf(record!.id, modeSelect.value, resultBox);
+    });
+    modeSelect.addEventListener('click', (e) => e.stopPropagation());
+  }
 }
 
 async function loadActivity(): Promise<void> {
@@ -1476,8 +1620,9 @@ async function loadActivity(): Promise<void> {
       const labels = r.labelsOut.length ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">⛳ ${escapeHtml(r.labelsOut.join(','))}</span>` : '';
       const tier = `<span style="font-size:10px;color:var(--color-text-muted);">tier ${r.tier}</span>`;
       const rule = r.rule ? `<span style="font-size:10px;color:var(--color-text-muted);margin-left:6px;">rule:${escapeHtml(r.rule.id)}</span>` : '';
+      const recordJson = encodeURIComponent(JSON.stringify(r));
       return `
-        <div data-record-id="${escapeHtml(r.id)}" style="padding:6px 0;border-bottom:1px solid var(--color-border);">
+        <div class="activity-row" data-record-id="${escapeHtml(r.id)}" data-record-json="${recordJson}" style="padding:6px 0;border-bottom:1px solid var(--color-border);cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
               ${effectBadge(r.effect)}
@@ -1486,10 +1631,26 @@ async function loadActivity(): Promise<void> {
             </div>
             <span style="font-size:10px;color:var(--color-text-muted);flex-shrink:0;">${fmtTime(r.timestamp)}</span>
           </div>
-          <div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.reason)} · ${tier}${rule}${labels}</div>
+          <div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.reason)} · ${tier}${rule}${labels} · <a class="activity-why-link" data-record-id="${escapeHtml(r.id)}" style="color:var(--color-accent-primary);text-decoration:underline;cursor:pointer;">Why?</a></div>
+          <div class="activity-detail" data-detail-for="${escapeHtml(r.id)}" style="display:none;margin-top:6px;padding:6px;background:var(--color-bg-tertiary);border-radius:4px;font-size:11px;"></div>
         </div>`;
     }).join('');
     activityList.innerHTML = rows;
+    // Wire up Why? affordance and clickable rows.
+    activityList.querySelectorAll('.activity-row').forEach((rowEl) => {
+      rowEl.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.activity-why-link')) return; // handled below
+        toggleActivityDetail(rowEl as HTMLElement);
+      });
+    });
+    activityList.querySelectorAll('.activity-why-link').forEach((linkEl) => {
+      linkEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const row = (linkEl as HTMLElement).closest('.activity-row') as HTMLElement | null;
+        if (row) toggleActivityDetail(row);
+      });
+    });
   } catch (err) {
     console.error('[Sidebar] Failed to load activity:', err);
     activityList.innerHTML = '<div class="empty-state">Failed to load activity.</div>';
@@ -1510,12 +1671,15 @@ if (activityFilterEffect) {
   });
 }
 
-// Refresh the feed every 5 seconds while the panel is visible.
+// Refresh the feed every 5 seconds while the panel is visible. We
+// pause auto-refresh whenever the user has expanded a row's "Why?"
+// detail panel, so they don't lose their place mid-investigation.
 setInterval(() => {
   const body = document.getElementById('activity-body');
-  if (body && !body.classList.contains('collapsed')) {
-    loadActivity();
-  }
+  if (!body || body.classList.contains('collapsed')) return;
+  const expanded = activityList?.querySelector('.activity-detail[style*="display: block"]');
+  if (expanded) return;
+  loadActivity();
 }, 5_000);
 
 loadActivity();

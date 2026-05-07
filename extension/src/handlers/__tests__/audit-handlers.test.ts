@@ -159,6 +159,34 @@ describe('audit-handlers', () => {
     expect(Watchdog.inspect('https://example.com')).toEqual({ status: 'normal' });
   });
 
+  it('policy.replay re-runs a recorded decision and returns a diff', async () => {
+    const records = Audit.list();
+    expect(records.length).toBeGreaterThan(0);
+    const target = records[0];
+    const r = (await dispatch({
+      type: 'policy.replay',
+      recordId: target.id,
+      modifications: { mode: 'plan' },
+    })) as {
+      ok: boolean;
+      result?: {
+        decision: { effect: string };
+        diff?: unknown;
+      };
+    };
+    expect(r.ok).toBe(true);
+    expect(r.result?.decision.effect).toBeDefined();
+  });
+
+  it('policy.replay reports missing recordId', async () => {
+    const r = (await dispatch({
+      type: 'policy.replay',
+      recordId: 'nope',
+    })) as { ok: boolean; error?: string };
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/no audit record/i);
+  });
+
   it('policy.simulate runs a what-if without recording', async () => {
     const before = Audit.list().length;
     const r = (await dispatch({
