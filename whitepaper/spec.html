@@ -123,33 +123,84 @@ for await (const ev of window.agent.run({
 
     <h2 id="permissions">Permission model</h2>
     <p>
-      Every capability requires explicit user consent, scoped per origin and
-      revocable. Same posture as <code>geolocation</code> and the camera.
+      Every API call goes through a single chokepoint — the <strong>PolicyEngine</strong>
+      — which evaluates the call against a 9-tier ladder of checks. The full
+      design lives in <a class="link" href="https://github.com/r/harbor/blob/main/docs/PERMISSIONS.md" target="_blank" rel="noopener">docs/PERMISSIONS.md</a>;
+      the short version is below.
     </p>
-    <p>The core scopes:</p>
+
+    <h3>Typed actions, not opaque scopes</h3>
+    <p>
+      Every API call is described by a typed action of the form
+      <code>verb.noun.qualifier</code>. The engine reasons in this vocabulary, and
+      so do user policies. The set is small and effect-classified:
+    </p>
     <ul>
-      <li><code>model:prompt</code> — generate text</li>
-      <li><code>model:tools</code> — let the model pick and call tools (autonomous loop)</li>
-      <li><code>model:list</code> — list configured providers and models</li>
-      <li><code>mcp:tools.list</code> / <code>mcp:tools.call</code> — list and execute MCP tools</li>
-      <li><code>mcp:servers.register</code> — register a website-provided MCP server (BYOC)</li>
-      <li><code>browser:activeTab.read</code> — read the current page</li>
-      <li><code>browser:activeTab.interact</code> / <code>activeTab.screenshot</code> — same-tab interaction (gated)</li>
-      <li><code>browser:tabs.read</code> / <code>tabs.create</code> — list and spawn-and-control tabs (gated)</li>
-      <li><code>chat:open</code> — open the user's chat surface</li>
-      <li><code>web:fetch</code> — CORS-bypassing fetch (gated)</li>
-      <li><code>agents:register</code> / <code>agents:invoke</code> — multi-agent surface (gated)</li>
+      <li><code>model.prompt.local</code> / <code>model.prompt.remote.firstParty</code> / <code>model.prompt.remote.thirdParty</code> — LLM access, distinguishing on-device vs cloud egress</li>
+      <li><code>model.list</code> — list configured providers/models (metadata only)</li>
+      <li><code>tool.list</code> / <code>tool.call</code> — list and call MCP tools</li>
+      <li><code>mcp.server.register</code> — register a website-provided MCP server (BYOC)</li>
+      <li><code>browser.read.activeTab</code> / <code>read.element</code> / <code>read.screenshot</code> / <code>read.tabs</code> — page reads</li>
+      <li><code>browser.write.interact</code> / <code>write.navigate</code> / <code>write.tabsCreate</code> — page mutations</li>
+      <li><code>network.egress.same_origin</code> / <code>network.egress.cross_origin</code> — fetch through the proxy</li>
+      <li><code>agent.register</code> / <code>discover</code> / <code>invoke</code> / <code>delegate.*</code> — multi-agent surface</li>
     </ul>
     <p style="color: var(--ink-mute); font-size: var(--t-small);">
-      Higher-risk scopes are additionally gated by extension-level feature flags
-      (<code>browserInteraction</code>, <code>browserControl</code>, <code>toolCalling</code>,
-      <code>multiAgent</code>) so users can disable whole capability classes globally.
+      Each action carries metadata (effect tier, locality, reversibility, default
+      data labels) the engine uses to pick a default disposition. Reads default
+      to session-bound prompts; writes default to <em>preview-then-confirm</em>;
+      destructive actions are always confirmed and cannot be auto-allowed.
     </p>
+
+    <h3>Sessions and capability tokens</h3>
     <p>
-      Permissions are origin-scoped: <code>example.com</code>
-      granting <code>model:tools</code> does not grant it to <code>other.com</code>.
-      Tool allow-lists let the user choose <em>which</em> tools each origin can use,
-      not just whether tools are allowed at all.
+      An agent operates inside a <strong>session</strong> that is bound to an
+      origin and to a <strong>capability token</strong> — the unit of authority
+      the engine checks on every gated action. Tokens carry an
+      <code>allowedActions</code> set, an <code>acceptedLabels</code> set,
+      explicit budgets (tool calls, wall clock, etc.), a TTL, and a
+      <strong>mode</strong>:
+    </p>
+    <ul>
+      <li><code>plan</code> — reads and prompts only; the token's
+        <code>allowedActions</code> excludes every <code>write</code> action.</li>
+      <li><code>execute</code> — normal evaluation per the ladder.</li>
+      <li><code>watch</code> — Execute, but writes return <em>preview</em> and
+        pause for explicit confirmation.</li>
+    </ul>
+    <p>
+      Mode transitions don't just flip a flag — they re-mint the token. Cached
+      authority can't be widened after the fact. When a session delegates to a
+      subagent, the engine enforces strict OCAP-style attenuation: child
+      <code>allowedActions</code> ⊆ parent, child <code>acceptedLabels</code> ⊆
+      parent, child budgets ≤ parent, child TTL ≤ parent.
+    </p>
+
+    <h3>Information-flow labels</h3>
+    <p>
+      Reads attach <code>DataLabel</code>s to the data they produce
+      (<code>credentials</code>, <code>payments</code>, <code>identity</code>,
+      <code>regulated</code>, <code>confidential</code>). The engine propagates
+      labels through prompts and tool calls, and any attempt to send labeled
+      data to an action whose <code>acceptsLabels</code> excludes that label
+      fails closed at Tier 3 with <code>ERR_LABEL_FLOW_BLOCKED</code> — no
+      matter how generous the user's policy is.
+    </p>
+
+    <h3>Origin-scoped, revocable, auditable</h3>
+    <p>
+      Permissions remain origin-scoped: <code>example.com</code>'s grant for
+      <code>tool.call</code> does not transfer to <code>other.com</code>. Tool
+      allow-lists still let the user pick <em>which</em> tools each origin may
+      call. Every engine decision is recorded in an audit log with the
+      ladder tier that fired, the matched rule (if any), and the labels on
+      the input — surfaced as a "Why?" / "What if?" affordance in the
+      sidebar so silent allows are never invisible.
+    </p>
+    <p style="color: var(--ink-mute); font-size: var(--t-small);">
+      Higher-risk action classes remain gated by extension-level feature flags
+      so users can disable whole capability classes (browser write, tool calling,
+      multi-agent) globally and out-of-band of any per-origin grant.
     </p>
 
     <h2 id="threat-model">Threat model, in one paragraph</h2>

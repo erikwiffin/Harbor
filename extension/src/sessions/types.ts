@@ -7,6 +7,11 @@
  */
 
 import type { PermissionScope, PermissionGrant, ConversationMessage } from '../agents/types';
+import type { SessionMode } from '../policy/tokens';
+
+// Re-export SessionMode so consumers of session types don't have to reach
+// into the policy module just to type a session's mode.
+export type { SessionMode } from '../policy/tokens';
 
 // =============================================================================
 // Session Capability Types
@@ -124,6 +129,20 @@ export interface AgentSession {
 
   /** Usage statistics */
   usage: SessionUsage;
+
+  /**
+   * Session mode in the new permission model. The mode is part of the
+   * capability token and gates whether handlers can perform writes.
+   * Defaults to `execute` for legacy implicit/explicit sessions.
+   */
+  mode: SessionMode;
+
+  /**
+   * Capability token id, if the session has been minted one. The handler
+   * threads this through requireAction so the engine's Tier 5 token
+   * check authorizes the action.
+   */
+  tokenId?: string;
 }
 
 /**
@@ -163,6 +182,13 @@ export interface CreateSessionOptions {
 
   /** Reason for requesting these capabilities */
   reason?: string;
+
+  /**
+   * Initial session mode. Defaults to `execute`. Pages opting into the
+   * plan/execute split should pass `mode: 'plan'` and call
+   * `agent.upgradeSession` after the user has reviewed the plan.
+   */
+  mode?: SessionMode;
 
   /** Requested capabilities */
   capabilities: {

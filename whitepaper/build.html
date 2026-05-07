@@ -121,24 +121,42 @@ document.getElementById("ask").onclick = async () =&gt; {
 
     <h2 id="agent">3. Run an agent</h2>
     <p>
-      Add tool scopes; let the user's model pick from the tools they have approved.
-      <code>agent.run</code> is gated by the <code>toolCalling</code> feature flag in the
-      Web Agents API sidebar — flip it on for development.
+      Real agents create an explicit session in <code>plan</code> mode, propose
+      what they want to do, and only ask the user to upgrade to <code>execute</code>
+      when they have something to apply. The session carries a capability
+      token that bounds everything the agent can do — when you upgrade, the
+      token is re-minted with the new actions. <code>agent.run</code> remains
+      gated by the <code>toolCalling</code> feature flag in the Web Agents API
+      sidebar — flip it on for development.
     </p>
-    <pre class="ex-code" style="white-space: pre">await window.agent.requestPermissions({
-  scopes: ["model:tools", "mcp:tools.list", "mcp:tools.call"],
+    <pre class="ex-code" style="white-space: pre">const session = await agent.requestCapabilities({
+  name: "Research assistant",
+  mode: "plan",
+  require: [
+    { action: "model.prompt.local" },
+    { action: "tool.list" },
+    { action: "tool.call" },
+  ],
   tools:  ["brave-search/search", "memory/save"],
   reason: "Research assistant needs search.",
 });
 
-for await (const ev of window.agent.run({
+for await (const ev of agent.run({
+  sessionId: session.id,
   task: "Find recent press on AI safety",
   maxToolCalls: 10,
 })) {
   if (ev.type === "thinking")  console.log(ev.content);
   if (ev.type === "tool_call") console.log("→", ev.tool);
   if (ev.type === "final")     console.log(ev.output);
-}</pre>
+}
+
+// Later, when the user clicks "Apply suggested edit":
+await agent.upgradeSession(session.id, {
+  mode: "execute",
+  add: [{ action: "browser.write.interact" }],
+  reason: "Apply the changes you approved",
+});</pre>
 
     <h2 id="page-tools">4. Expose your own tools (W3C WebMCP)</h2>
     <p>

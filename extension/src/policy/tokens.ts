@@ -353,12 +353,17 @@ class TokenRegistry {
 
   /**
    * Revoke a token. Children are NOT automatically revoked here; callers
-   * should revoke the chain explicitly via `revokeWithDescendants`.
+   * should revoke the chain explicitly via `revokeWithDescendants`. The
+   * optional `reason` is purely advisory — it's logged and ignored by the
+   * engine — so callers can label "why" without changing semantics.
    */
-  revoke(tokenId: string): boolean {
+  revoke(tokenId: string, reason?: string): boolean {
     const token = this.tokens.get(tokenId);
     if (!token) return false;
     token.revoked = true;
+    if (reason) {
+      console.log('[TokenRegistry] Revoked', tokenId, 'reason:', reason);
+    }
     return true;
   }
 
