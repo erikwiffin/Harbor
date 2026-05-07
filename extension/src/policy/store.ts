@@ -351,6 +351,13 @@ export async function initializePolicyStore(): Promise<void> {
     });
   }
 
+  // Wire the origin-grant store into the engine's Tier 8 resolver. Done
+  // here rather than at the engine module level to avoid a circular import
+  // between the engine and the origin-grants module.
+  const { setOriginGrantResolver } = await import('./engine');
+  const { originGrantResolver } = await import('./origin-grants');
+  setOriginGrantResolver(originGrantResolver);
+
   console.log('[Harbor Policy] Loaded', Policy.rules().length, 'rules');
 }
 
