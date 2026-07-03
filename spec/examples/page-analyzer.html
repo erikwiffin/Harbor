@@ -200,7 +200,7 @@
       try {
         // Request permissions
         const result = await window.agent.requestPermissions({
-          scopes: ['model:prompt', 'browser:activeTab.read'],
+          scopes: ['model:prompt'],
           reason: 'This demo analyzes the content of your current tab.'
         });
         
@@ -209,7 +209,8 @@
         }
         
         // Read the active tab
-        tabContent = await window.agent.browser.activeTab.readability();
+        tabContent = extractReadableContent();
+        console.log(tabContent)
         
         // Display tab info
         const wordCount = tabContent.text.split(/\s+/).length;
@@ -237,7 +238,8 @@
         
         // Create AI session
         session = await window.ai.createTextSession({
-          systemPrompt: 'You are a helpful assistant that analyzes web page content. Be concise but thorough.'
+          systemPrompt: 'You are a helpful assistant that analyzes web page content. Be concise but thorough.',
+          model: "ollama:llama3.2"
         });
         
       } catch (err) {
@@ -305,7 +307,138 @@
     });
     
     // Start
-    init();
+    setTimeout(() => {
+      init();
+    }, 100)
+
+
+/**
+ * Content extraction function that runs in the page context.
+ * This function is injected into the target page.
+ * 
+ * IMPORTANT: This function must be completely self-contained because it's
+ * serialized and executed in the page context. Any helper functions must
+ * be defined INSIDE this function, not as separate module-level functions.
+ */
+function extractReadableContent() {
+  // Helper function to extract text from an element (must be defined inside)
+  function extractTextFromElement(element) {
+    const textParts = [];
+
+    function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent?.trim();
+        if (text) {
+          textParts.push(text);
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node;
+        const tagName = el.tagName.toLowerCase();
+
+        // Skip hidden elements
+        const style = window.getComputedStyle?.(el);
+        if (style?.display === 'none' || style?.visibility === 'hidden') {
+          return;
+        }
+
+        // Add newlines for block elements
+        const blockElements = [
+          'p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+          'li', 'br', 'hr', 'blockquote', 'pre', 'table', 'tr',
+        ];
+
+        if (blockElements.includes(tagName)) {
+          textParts.push('\n');
+        }
+
+        // Process children
+        for (const child of el.childNodes) {
+          walk(child);
+        }
+
+        if (blockElements.includes(tagName)) {
+          textParts.push('\n');
+        }
+      }
+    }
+
+    walk(element);
+    return textParts.join(' ');
+  }
+
+  const title = document.title;
+
+  // Remove unwanted elements
+  const elementsToRemove = [
+    'script',
+    'style',
+    'noscript',
+    'iframe',
+    'object',
+    'embed',
+    'nav',
+    'header',
+    'footer',
+    'aside',
+    '[role="navigation"]',
+    '[role="banner"]',
+    '[role="contentinfo"]',
+    '[aria-hidden="true"]',
+    '.ad',
+    '.ads',
+    '.advertisement',
+    '.social-share',
+    '.comments',
+    '.related-posts',
+    '.sidebar',
+    '.cookie-banner',
+    '.popup',
+    '.modal',
+  ];
+
+  // Clone the document to avoid modifying the actual page
+  const clone = document.body.cloneNode(true);
+
+  // Remove unwanted elements from clone
+  for (const selector of elementsToRemove) {
+    const elements = clone.querySelectorAll(selector);
+    elements.forEach((el) => el.remove());
+  }
+
+  // Try to find main content area
+  const mainSelectors = [
+    'main',
+    'article',
+    '[role="main"]',
+    '.content',
+    '.post-content',
+    '.article-content',
+    '.entry-content',
+    '#content',
+    '#main',
+  ];
+
+  let contentElement= null;
+  for (const selector of mainSelectors) {
+    contentElement = clone.querySelector(selector);
+    if (contentElement) break;
+  }
+
+  // Fall back to body if no main content found
+  const targetElement = contentElement || clone;
+
+  // Extract text
+  let text = extractTextFromElement(targetElement);
+
+  // Clean up whitespace
+  text = text
+    .replace(/\s+/g, ' ')
+    .replace(/\n\s*\n/g, '\n\n')
+    .trim();
+
+  return { text, title };
+}
+
   </script>
 </body>
 </html>
